@@ -536,6 +536,14 @@ def _run(data_dir: Path, resources: Path) -> int:
 
     import webview
 
+    # pywebview cancels every file download by default (WebView2's
+    # DownloadStarting handler sets args.Cancel = True unless this is on) —
+    # without it, the frontend's "Download Markdown"/"Download PDF" buttons
+    # (blob-URL <a download> / jsPDF's doc.save(), see frontend/src/utils/
+    # report.js) fail silently: no error, no dialog, nothing happens. With
+    # it enabled, WebView2 shows its own native Save-As dialog per download.
+    webview.settings["ALLOW_DOWNLOADS"] = True
+
     webview.create_window(
         "FIFA Prediction",
         f"http://127.0.0.1:{port}/",
