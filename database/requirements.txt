@@ -1,0 +1,4 @@
+# Additional dependencies for the database abstraction layer (database/).
+# Combine with core/requirements.txt.
+SQLAlchemy==2.0.52
+PyMySQL==1.2.0

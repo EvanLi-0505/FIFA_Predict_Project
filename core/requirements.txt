@@ -1,0 +1,7 @@
+# Dependencies for the shared ML core (core/). Backend-specific
+# dependencies (FastAPI, SQLAlchemy, uvicorn, etc.) will be added to
+# backend/requirements.txt in Stage 3 and will include this file.
+pandas==3.0.5
+numpy==2.5.2
+scikit-learn==1.9.0
+joblib==1.5.3

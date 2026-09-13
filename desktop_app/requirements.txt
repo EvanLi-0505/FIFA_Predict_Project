@@ -1,0 +1,10 @@
+# Additional dependencies for the Desktop Edition (desktop_app/).
+# Combine with backend/requirements.txt (desktop_app/main.py imports and
+# runs the exact same FastAPI app backend/requirements.txt supports).
+pywebview==6.2.1
+pythonnet==3.1.0
+clr_loader==0.3.1
+
+# Only needed to build desktop_app/build_release.py's release zip, not to
+# run the app in dev mode.
+pyinstaller==6.22.2
