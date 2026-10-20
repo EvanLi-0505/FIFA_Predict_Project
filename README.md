@@ -3,8 +3,7 @@
 Predicts international football match outcomes (Home Win / Draw / Home
 Loss) with a Decision Tree trained on historical team form, goal
 statistics, and tournament context. Originally a Data Mining coursework
-notebook (see [`Reference/IPYNB_colab_code/`](Reference/IPYNB_colab_code));
-this repository is the production version, shipped as both a **Web
+Colab notebook; this repository is the production version, shipped as both a **Web
 application** and a **Windows Desktop application**, sharing one
 machine-learning core so both editions produce identical predictions for
 the same input.
@@ -33,7 +32,6 @@ the same input.
 | [`models/`](models) | Trained model artifacts (`model.joblib` + `metadata.json` per version). |
 | [`tests/`](tests) | Tests for `core/` and `database/`, including parity checks against the original notebook. |
 | [`scripts/`](scripts) | One-off tooling: train/export a model, validate `core/` against the notebook, bootstrap a dev database. |
-| [`Reference/`](Reference) | Materials from before this became a production project — the original Colab notebook, the coursework submission, and the development brief this project was built from. Not part of the running application. |
 
 ## Web Version
 
@@ -100,32 +98,39 @@ Update on Windows 10).
 
 1. Go to this repository's [Releases](../../releases) page.
 2. Download `FIFA-Prediction-win-x64.zip`.
-3. Extract it anywhere and run `FIFA-Prediction.exe` — no installer, no
-   admin rights, no install-location wizard.
-4. Predictions work immediately and fully offline (internet is only
-   needed if you want to download a dataset update from elsewhere first).
+3. Extract it into any folder — it contains just `FIFA-Prediction.exe`,
+   an `_internal\` folder, and `LICENSE` — and run `FIFA-Prediction.exe`.
+   No installer, no admin rights, no install-location wizard.
+4. Predictions work immediately and fully offline.
 
-First launch of a freshly downloaded executable can take noticeably
-longer than later launches — this is Windows Defender/SmartScreen
-scanning a new, unsigned binary, not a bug. See
+The window appears within a couple of seconds with a loading screen while
+the prediction engine starts. The very first launch of a freshly
+downloaded executable can take longer — Windows Defender/SmartScreen scans
+a new, unsigned binary once. See
 [`desktop_app/README.md`](desktop_app/README.md#troubleshooting) if it
 seems stuck.
 
 ### Application data location
 
-Your data survives app updates/reinstalls because it's kept out of the
-install folder entirely:
+Fully portable: everything the app writes stays in a `data\` folder next
+to `FIFA-Prediction.exe`. Deleting the extracted folder removes the app
+completely — nothing is left in `%APPDATA%` or anywhere else.
 
 ```
-%APPDATA%\FIFA-Prediction\
-├── app.db              # SQLite database (datasets/models/predictions metadata)
-├── datasets\user\       # your uploaded dataset versions
-├── models\              # models you've trained
-└── logs\app.log         # startup + runtime log
+<extracted folder>\
+├── FIFA-Prediction.exe
+├── _internal\           # bundled runtime, built-in dataset and production model (read-only)
+├── LICENSE
+└── data\                # created on first launch
+    ├── app.db           # SQLite database (datasets/models/predictions metadata)
+    ├── datasets\user\   # your uploaded dataset versions
+    ├── models\          # models you've trained
+    ├── webview2\        # the window's browser cache
+    └── logs\app.log     # startup + runtime log (folder changeable in Settings)
 ```
 
-The built-in dataset and the original production model ship read-only
-alongside the executable and are never modified.
+To update, extract the new release and copy your old `data\` folder next
+to the new `FIFA-Prediction.exe`.
 
 ### Uploading a dataset / retraining a model
 
@@ -181,13 +186,17 @@ on, never whatever dataset happens to be separately flagged "active" (see
   Python/Node service pair — see each folder's README.
 - **Desktop**: see [`desktop_app/README.md`](desktop_app/README.md) —
   `desktop_app/build_release.py` builds the frontend, bundles everything
-  with PyInstaller, and zips the portable release.
+  with PyInstaller, and writes the release zip to `desktop_app/release/`.
 
 ## Known limitations
 
-Inherited from the original notebook's methodology (see
-[`Reference/IPYNB_colab_code/FIFA_World_Cup_ML_Project_Documentation.md`](Reference/IPYNB_colab_code/FIFA_World_Cup_ML_Project_Documentation.md#11-project-limitations)):
+Inherited from the original notebook's methodology:
 no player-level data, injuries, or suspensions; no FIFA ranking/Elo
 features; a fixed 5-match recent-form window; draws remain the hardest
 class to predict. Predictions are statistical estimates for reference
 only — see the in-app disclaimer.
+
+## License
+
+Copyright (c) 2026 LIZHE. All rights reserved — the source is viewable for
+reference only; see [`LICENSE`](LICENSE).

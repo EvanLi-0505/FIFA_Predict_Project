@@ -1,5 +1,0 @@
-# Reference/ holds archived coursework submissions and the original Colab
-# notebook this project was migrated from — not application source code.
-# linguist-vendored excludes it from GitHub's "Languages" bar so the stat
-# reflects the actual backend/frontend/desktop_app codebase instead.
-Reference/** linguist-vendored

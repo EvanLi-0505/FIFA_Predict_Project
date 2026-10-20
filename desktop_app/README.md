@@ -35,11 +35,24 @@ needed to iterate.
 .venv/Scripts/python.exe desktop_app/build_release.py
 ```
 
-This builds the frontend, runs PyInstaller against `app.spec`, and zips
-the result to `desktop_app/release/FIFA-Prediction-win-x64.zip`. Extract
-it anywhere and run `FIFA-Prediction.exe` — no installer, no admin rights,
-no chosen install directory; it's a portable folder like most GitHub
-Releases ship.
+This builds the frontend, runs PyInstaller against `app.spec`, and writes
+`desktop_app/release/FIFA-Prediction-win-x64.zip` — the only file in
+`release/`, and the one to attach to a GitHub Release. The zip has no
+wrapping folder: it extracts straight to `FIFA-Prediction.exe`,
+`_internal\` and `LICENSE`. The same bundle, unzipped, is left at
+`desktop_app/build/dist/FIFA-Prediction/` for a quick smoke test.
+
+Why a folder and not a single exe: a PyInstaller one-file exe re-extracts
+its ~190 MB runtime into `%TEMP%` on every launch (measured: 23–26 s per
+start vs. ~4 s for the folder build, plus leftovers on the system drive if
+it crashes).
+
+### Startup sequence
+
+The window opens immediately on a built-in loading screen and the backend
+boots on a background thread (`_boot_backend` in `main.py`); the UI loads
+as soon as `/api/health` answers. The backend prefers port 17872 and falls
+back to any free port if that one is taken.
 
 First launch of a freshly built (or freshly downloaded) executable is
 often noticeably slower than later launches — Windows Defender/SmartScreen
@@ -55,14 +68,15 @@ moving or deleting that one folder leaves nothing behind anywhere else on
 the system.
 
 ```
-FIFA-Prediction\                 # wherever you extracted the zip
+<extracted folder>\
 ├── FIFA-Prediction.exe
 ├── _internal\...
+├── LICENSE
 └── data\
     ├── app.db              # SQLite database (datasets/models/predictions metadata)
     ├── datasets\user\       # uploaded dataset versions
     ├── models\              # trained model artifacts
-    ├── webview2\            # WebView2's own browser profile/cache (redirected here, not %APPDATA%)
+    ├── webview2\            # WebView2's browser profile/cache (kept between launches for faster startup)
     ├── logs\app.log         # startup + runtime log — check this first if something goes wrong
     └── .instance-lock       # OS-level exclusive lock (see main.py) preventing a second launch
 ```

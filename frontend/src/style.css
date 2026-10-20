@@ -70,12 +70,6 @@ a {
   gap: 16px;
 }
 
-@media (max-width: 640px) {
-  .grid-2 {
-    grid-template-columns: 1fr;
-  }
-}
-
 label {
   display: block;
   font-size: 0.85rem;

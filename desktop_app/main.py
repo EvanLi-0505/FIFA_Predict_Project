@@ -368,8 +368,11 @@ def register_system_routes(fastapi_app, data_dir: Path) -> None:
             "log_size_bytes": log_path.stat().st_size if log_path.exists() else 0,
         }
 
+    # No `-> Response` annotation: under `from __future__ import annotations`
+    # it's the string "Response", which FastAPI can't resolve (the import is
+    # function-local), breaking /openapi.json — see SetLogFolderRequest.
     @fastapi_app.get("/api/system/log", tags=["system"])
-    def get_log(lines: int = 500) -> Response:
+    def get_log(lines: int = 500):
         log_path = current_log_path()
         if not log_path.exists():
             return Response(content="(no log yet)", media_type="text/plain")
@@ -426,22 +429,69 @@ def mount_frontend(fastapi_app, frontend_dist: Path) -> None:
 
     @fastapi_app.get("/{full_path:path}", include_in_schema=False)
     def spa_fallback(full_path: str):  # noqa: ARG001 - Vue Router (history mode) reads location itself
-        return FileResponse(index_path)
+        # WebView2's profile (and its HTTP cache) persists across launches;
+        # a cached index.html from an older build would point at hashed
+        # /assets/ files that no longer exist after an upgrade.
+        return FileResponse(index_path, headers={"Cache-Control": "no-cache"})
 
 
-def wait_for_server(port: int, timeout: float = 30.0) -> bool:
+PREFERRED_PORT = 17872
+
+# Shown the instant the window opens, while the backend (pandas/scikit-learn
+# imports alone are ~2s) boots on a background thread — see _run().
+SPLASH_HTML = """<!doctype html>
+<html><head><meta charset="utf-8"><style>
+  html,body{margin:0;height:100%;background:#0f172a;color:#e6eaf5;
+    font-family:'Segoe UI',system-ui,sans-serif;display:flex;align-items:center;justify-content:center}
+  .box{text-align:center}
+  .spinner{width:36px;height:36px;margin:0 auto 18px;border:3px solid #2f3d61;
+    border-top-color:#4f7cff;border-radius:50%;animation:spin .9s linear infinite}
+  @keyframes spin{to{transform:rotate(360deg)}}
+  h1{font-size:20px;font-weight:600;margin:0 0 6px}
+  p{font-size:13px;color:#9aa5c4;margin:0}
+</style></head><body><div class="box">
+  <div class="spinner"></div><h1>FIFA Prediction</h1><p>Starting prediction engine…</p>
+</div></body></html>"""
+
+
+def pick_port(preferred: int = PREFERRED_PORT) -> int:
+    """The fixed preferred port when it's free, otherwise any free port.
+
+    A hard-coded port that happens to be taken (another program, or a range
+    Windows reserves for Hyper-V/WSL/Docker) makes uvicorn's bind fail
+    inside its thread with nothing visible — the app then just waited out
+    the whole startup timeout before reporting the backend as dead.
+    """
+
+    import socket
+
+    for candidate in (preferred, 0):
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
+            try:
+                probe.bind(("127.0.0.1", candidate))
+            except OSError:
+                continue
+            return probe.getsockname()[1]
+    raise OSError("No free local TCP port is available.")
+
+
+def wait_for_server(port: int, server_thread: threading.Thread, timeout: float = 120.0) -> bool:
     import urllib.request
 
     deadline = time.monotonic() + timeout
     url = f"http://127.0.0.1:{port}/api/health"
     while time.monotonic() < deadline:
+        # uvicorn exits its thread on a fatal startup error (e.g. bind
+        # failure) — no point polling out the full timeout after that.
+        if not server_thread.is_alive():
+            return False
         try:
             with urllib.request.urlopen(url, timeout=1.5) as response:  # noqa: S310 - fixed localhost URL
                 if response.status == 200:
                     return True
         except OSError:
             pass
-        time.sleep(0.3)
+        time.sleep(0.15)
     return False
 
 
@@ -497,43 +547,6 @@ def main() -> int:
 
 
 def _run(data_dir: Path, resources: Path) -> int:
-    configure_environment(data_dir, resources)
-
-    # Imported only now: it must see the environment variables set above.
-    import uvicorn
-    from backend.app.main import app as fastapi_app
-
-    register_system_routes(fastapi_app, data_dir)
-    mount_frontend(fastapi_app, frontend_dist_dir(resources))
-
-    port = 17872
-    # log_config=None: uvicorn's default logging setup attaches a
-    # StreamHandler to sys.stderr, which is None under PyInstaller's
-    # windowed (console=False) build — the likely cause of an early,
-    # silent hang found while first packaging this (no visible exception,
-    # since there's no console to print one to; see main()'s catch-all for
-    # the general version of this class of bug). backend/app/main.py
-    # already calls logging.basicConfig() itself, so uvicorn's own log
-    # config isn't needed anyway.
-    config = uvicorn.Config(
-        fastapi_app, host="127.0.0.1", port=port, log_level="warning", log_config=None
-    )
-    server = uvicorn.Server(config)
-
-    server_thread = threading.Thread(target=server.run, daemon=True)
-    server_thread.start()
-
-    if not wait_for_server(port):
-        show_native_error(
-            "FIFA Prediction — Backend failed to start",
-            f"The local prediction service did not respond in time.\n\n"
-            f"Details were written to: {current_log_path()}",
-        )
-        server.should_exit = True
-        return 1
-
-    logger.info("Backend ready on port %s. Opening window.", port)
-
     import webview
 
     # pywebview cancels every file download by default (WebView2's
@@ -544,27 +557,90 @@ def _run(data_dir: Path, resources: Path) -> int:
     # it enabled, WebView2 shows its own native Save-As dialog per download.
     webview.settings["ALLOW_DOWNLOADS"] = True
 
-    webview.create_window(
+    # The window opens immediately on a splash page and the backend boots
+    # in parallel (webview.start runs _boot_backend on its own thread once
+    # the GUI loop is up), so WebView2's own startup overlaps the ~2s of
+    # pandas/scikit-learn imports instead of following them.
+    window = webview.create_window(
         "FIFA Prediction",
-        f"http://127.0.0.1:{port}/",
+        html=SPLASH_HTML,
         width=1320,
         height=880,
         min_size=(960, 640),
+        background_color="#0f172a",
         js_api=DesktopJsApi(),
     )
+    backend: dict = {"server": None, "thread": None, "exit_code": 0}
+
     # storage_path: WebView2's own cookie/cache/local-storage profile.
     # pywebview defaults this to a folder under %APPDATA% — left
     # unconfigured, that would be a SECOND trace on the system drive
     # besides app_data_dir() above, defeating the "delete the folder,
     # nothing is left" requirement. Keeping it inside the same portable
     # data_dir consolidates the app's entire footprint into one place.
-    webview.start(storage_path=str(data_dir / "webview2"))
+    # private_mode=False: pywebview's default private mode deletes that
+    # profile on every close (blocking exit up to 3s) and rebuilds it cold
+    # on every launch, discarding WebView2's HTTP and JS code caches.
+    webview.start(
+        _boot_backend,
+        (window, data_dir, resources, backend),
+        private_mode=False,
+        storage_path=str(data_dir / "webview2"),
+    )
 
     logger.info("Window closed. Shutting down backend.")
-    server.should_exit = True
-    server_thread.join(timeout=5)
-    return 0
+    if backend["server"] is not None:
+        backend["server"].should_exit = True
+        backend["thread"].join(timeout=5)
+    return backend["exit_code"]
+
+
+def _boot_backend(window, data_dir: Path, resources: Path, backend: dict) -> None:
+    try:
+        configure_environment(data_dir, resources)
+
+        # Imported only now: it must see the environment variables set above.
+        import uvicorn
+        from backend.app.main import app as fastapi_app
+
+        register_system_routes(fastapi_app, data_dir)
+        mount_frontend(fastapi_app, frontend_dist_dir(resources))
+
+        port = pick_port()
+        # log_config=None: uvicorn's default logging setup attaches a
+        # StreamHandler to sys.stderr, which is None under PyInstaller's
+        # windowed (console=False) build — the likely cause of an early,
+        # silent hang found while first packaging this. backend/app/main.py
+        # already calls logging.basicConfig() itself, so uvicorn's own log
+        # config isn't needed anyway.
+        config = uvicorn.Config(
+            fastapi_app, host="127.0.0.1", port=port, log_level="warning", log_config=None
+        )
+        server = uvicorn.Server(config)
+        server_thread = threading.Thread(target=server.run, daemon=True)
+        backend.update(server=server, thread=server_thread)
+        server_thread.start()
+
+        if not wait_for_server(port, server_thread):
+            raise RuntimeError("The local prediction service did not start.")
+
+        logger.info("Backend ready on port %s.", port)
+        window.load_url(f"http://127.0.0.1:{port}/")
+    except Exception as error:  # noqa: BLE001 - reported to the user, then the app closes
+        logger.exception("Backend failed to start.")
+        backend["exit_code"] = 1
+        show_native_error(
+            "FIFA Prediction — Backend failed to start",
+            f"{error}\n\nDetails were written to: {current_log_path()}",
+        )
+        window.destroy()
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    exit_code = main()
+    logging.shutdown()
+    # Skip interpreter teardown: pythonnet's atexit hook unloading the .NET
+    # runtime takes ~5s after the WebView2 window closes, with the process
+    # lingering invisibly. Everything of ours (DB, logs, lock) is already
+    # closed by now, so there's nothing left for that teardown to do.
+    os._exit(exit_code)

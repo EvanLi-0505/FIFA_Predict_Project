@@ -1,15 +1,15 @@
 """Build the Windows Desktop Edition release end-to-end:
 
     1. `npm run build` in frontend/ (fresh static assets)
-    2. PyInstaller against app.spec (one-folder bundle), output straight
-       into desktop_app/release/FIFA-Prediction/
-    3. Zip that folder -> desktop_app/release/FIFA-Prediction-win-x64.zip
+    2. PyInstaller against app.spec (one-folder bundle) into
+       desktop_app/build/dist/FIFA-Prediction/, plus the project LICENSE
+    3. Zip that folder's CONTENTS -> desktop_app/release/FIFA-Prediction-win-x64.zip
 
-Both the runnable folder AND the zip end up side by side under
-desktop_app/release/ — that whole folder is exactly what to attach to a
-GitHub Release (the zip for most users to download; the unpacked folder
-if you want to smoke-test the exact bits before uploading, without
-re-extracting the zip).
+The zip has no wrapping folder: it extracts straight to
+`FIFA-Prediction.exe`, `_internal/` and `LICENSE`. release/ only ever holds
+the zip — that's the file to attach to a GitHub Release. The unpacked
+build/dist/FIFA-Prediction/ folder is the same bits, handy for a smoke test
+before uploading.
 
 Usage (from anywhere):
     .venv/Scripts/python.exe desktop_app/build_release.py
@@ -26,9 +26,11 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 DESKTOP_APP_DIR = PROJECT_ROOT / "desktop_app"
 FRONTEND_DIR = PROJECT_ROOT / "frontend"
 PYINSTALLER = PROJECT_ROOT / ".venv" / "Scripts" / "pyinstaller.exe"
+LICENSE_FILE = PROJECT_ROOT / "LICENSE"
 
+DIST_DIR = DESKTOP_APP_DIR / "build" / "dist"
+BUNDLE_DIR = DIST_DIR / "FIFA-Prediction"
 RELEASE_DIR = DESKTOP_APP_DIR / "release"
-BUNDLE_DIR = RELEASE_DIR / "FIFA-Prediction"
 RELEASE_ZIP = RELEASE_DIR / "FIFA-Prediction-win-x64.zip"
 
 
@@ -55,36 +57,23 @@ def main() -> int:
     print("[build_release] Building frontend...")
     run([npm, "run", "build"], cwd=FRONTEND_DIR)
 
-    RELEASE_DIR.mkdir(parents=True, exist_ok=True)
-
     print("[build_release] Running PyInstaller (this can take a few minutes)...")
-    # --distpath sends the one-folder bundle straight to release/ instead
-    # of PyInstaller's default dist/ — see module docstring for why both
-    # outputs live in the same place. --workpath (intermediate build
-    # cache, not a deliverable) stays at the default desktop_app/build/.
     run(
-        [
-            str(PYINSTALLER),
-            "app.spec",
-            "--noconfirm",
-            "--distpath",
-            str(RELEASE_DIR),
-        ],
+        [str(PYINSTALLER), "app.spec", "--noconfirm", "--distpath", str(DIST_DIR)],
         cwd=DESKTOP_APP_DIR,
     )
+    shutil.copy2(LICENSE_FILE, BUNDLE_DIR / "LICENSE")
 
-    if not BUNDLE_DIR.exists():
-        print(f"[build_release] Expected {BUNDLE_DIR} to exist after build, but it does not.", file=sys.stderr)
-        return 1
-
-    if RELEASE_ZIP.exists():
-        RELEASE_ZIP.unlink()
+    # release/ is fully generated — clear anything from earlier builds
+    # (including the old layout's unpacked folder) so it only holds the zip.
+    if RELEASE_DIR.exists():
+        shutil.rmtree(RELEASE_DIR)
+    RELEASE_DIR.mkdir(parents=True)
 
     print(f"[build_release] Zipping {BUNDLE_DIR} -> {RELEASE_ZIP}...")
-    archive_base = str(RELEASE_ZIP.with_suffix(""))
-    shutil.make_archive(archive_base, "zip", root_dir=BUNDLE_DIR.parent, base_dir=BUNDLE_DIR.name)
+    shutil.make_archive(str(RELEASE_ZIP.with_suffix("")), "zip", root_dir=BUNDLE_DIR)
 
-    print(f"[build_release] Done.\n  Folder: {BUNDLE_DIR}\n  Zip:    {RELEASE_ZIP}")
+    print(f"[build_release] Done.\n  Zip:      {RELEASE_ZIP}\n  Unpacked: {BUNDLE_DIR}")
     return 0
 
 
