@@ -66,7 +66,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title="FIFA World Cup Match Prediction API",
-    version="2.0.0",
+    version="2.0.1",
     lifespan=lifespan,
 )
 

@@ -39,7 +39,7 @@ This builds the frontend, runs PyInstaller against `app.spec`, and writes
 `desktop_app/release/FIFA-Prediction-win-x64.zip` — the only file in
 `release/`, and the one to attach to a GitHub Release. The zip has no
 wrapping folder: it extracts straight to `FIFA-Prediction.exe`,
-`_internal\` and `LICENSE`. The same bundle, unzipped, is left at
+`FIFA-Prediction.exe.config`, `_internal\` and `LICENSE`. The same bundle, unzipped, is left at
 `desktop_app/build/dist/FIFA-Prediction/` for a quick smoke test.
 
 Why a folder and not a single exe: a PyInstaller one-file exe re-extracts
@@ -70,6 +70,7 @@ the system.
 ```
 <extracted folder>\
 ├── FIFA-Prediction.exe
+├── FIFA-Prediction.exe.config   # see Troubleshooting
 ├── _internal\...
 ├── LICENSE
 └── data\
@@ -99,6 +100,12 @@ without restarting.
 - **"Backend failed to start" / unexpected error dialogs**: the exact
   exception is written to `logs\app.log` (see above) — check there first.
 - **Slow first launch**: see the SmartScreen note above.
+- **"Failed to resolve Python.Runtime.Loader.Initialize"**: the
+  `FIFA-Prediction.exe.config` next to the exe is missing. A zip downloaded
+  from the internet and extracted with Explorer marks every file as "from
+  the internet", and .NET Framework refuses to load the bundled DLLs unless
+  that config (`loadFromRemoteSources`) is present. Re-extract the full zip,
+  or right-click the zip → Properties → **Unblock** before extracting.
 
 ## Known constraints
 

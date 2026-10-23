@@ -99,7 +99,8 @@ Update on Windows 10).
 1. Go to this repository's [Releases](../../releases) page.
 2. Download `FIFA-Prediction-win-x64.zip`.
 3. Extract it into any folder — it contains just `FIFA-Prediction.exe`,
-   an `_internal\` folder, and `LICENSE` — and run `FIFA-Prediction.exe`.
+   `FIFA-Prediction.exe.config`, an `_internal\` folder, and `LICENSE` —
+   and run `FIFA-Prediction.exe`. Keep the `.config` file next to the exe.
    No installer, no admin rights, no install-location wizard.
 4. Predictions work immediately and fully offline.
 
@@ -119,6 +120,7 @@ completely — nothing is left in `%APPDATA%` or anywhere else.
 ```
 <extracted folder>\
 ├── FIFA-Prediction.exe
+├── FIFA-Prediction.exe.config   # required — lets .NET load the bundled DLLs
 ├── _internal\           # bundled runtime, built-in dataset and production model (read-only)
 ├── LICENSE
 └── data\                # created on first launch

@@ -2,11 +2,13 @@
 
     1. `npm run build` in frontend/ (fresh static assets)
     2. PyInstaller against app.spec (one-folder bundle) into
-       desktop_app/build/dist/FIFA-Prediction/, plus the project LICENSE
+       desktop_app/build/dist/FIFA-Prediction/, plus the project LICENSE and
+       FIFA-Prediction.exe.config (see that file for why it's required)
     3. Zip that folder's CONTENTS -> desktop_app/release/FIFA-Prediction-win-x64.zip
 
 The zip has no wrapping folder: it extracts straight to
-`FIFA-Prediction.exe`, `_internal/` and `LICENSE`. release/ only ever holds
+`FIFA-Prediction.exe`, `FIFA-Prediction.exe.config`, `_internal/` and
+`LICENSE`. release/ only ever holds
 the zip — that's the file to attach to a GitHub Release. The unpacked
 build/dist/FIFA-Prediction/ folder is the same bits, handy for a smoke test
 before uploading.
@@ -27,6 +29,7 @@ DESKTOP_APP_DIR = PROJECT_ROOT / "desktop_app"
 FRONTEND_DIR = PROJECT_ROOT / "frontend"
 PYINSTALLER = PROJECT_ROOT / ".venv" / "Scripts" / "pyinstaller.exe"
 LICENSE_FILE = PROJECT_ROOT / "LICENSE"
+EXE_CONFIG_FILE = DESKTOP_APP_DIR / "FIFA-Prediction.exe.config"
 
 DIST_DIR = DESKTOP_APP_DIR / "build" / "dist"
 BUNDLE_DIR = DIST_DIR / "FIFA-Prediction"
@@ -63,6 +66,9 @@ def main() -> int:
         cwd=DESKTOP_APP_DIR,
     )
     shutil.copy2(LICENSE_FILE, BUNDLE_DIR / "LICENSE")
+    # .NET Framework only reads the root AppDomain's config from
+    # <exe name>.config beside the exe — it can't live inside _internal/.
+    shutil.copy2(EXE_CONFIG_FILE, BUNDLE_DIR / EXE_CONFIG_FILE.name)
 
     # release/ is fully generated — clear anything from earlier builds
     # (including the old layout's unpacked folder) so it only holds the zip.
