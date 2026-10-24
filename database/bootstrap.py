@@ -1,5 +1,5 @@
 """First-run bootstrap: create tables, register the built-in dataset and
-the Stage 1 production model artifact.
+the built-in model artifacts.
 
 Both the Web and Desktop backends call `bootstrap_database` once at
 startup. It is idempotent — safe to call on every process start.
@@ -8,6 +8,7 @@ startup. It is idempotent — safe to call on every process start.
 from __future__ import annotations
 
 import json
+from collections.abc import Sequence
 from pathlib import Path
 
 from sqlalchemy import Engine
@@ -17,7 +18,7 @@ from sqlalchemy.orm import Session
 from core.dataset.io import load_raw_dataset
 from core.validation.dataset_validation import validate_dataset
 from database.engine import create_all_tables
-from database.models import Dataset
+from database.models import Dataset, ModelVersion
 from database.repositories.sqlalchemy_repositories import (
     DatasetRepositoryImpl,
     ModelVersionRepositoryImpl,
@@ -32,20 +33,24 @@ def bootstrap_database(
     session: Session,
     *,
     builtin_dataset_csv: str | Path,
-    initial_model_dir: str | Path | None = None,
-    initial_model_id: str | None = None,
+    builtin_model_dirs: Sequence[str | Path] = (),
+    default_model_dir: str | Path | None = None,
 ) -> None:
-    """Create tables (if needed) and seed the built-in dataset + model.
+    """Create tables (if needed) and seed the built-in dataset + models.
 
     Parameters
     ----------
     builtin_dataset_csv : path to the protected built-in dataset CSV
         (`datasets/builtin/results.csv`), stored relative to the project's
         datasets root in the `datasets.file_path` column.
-    initial_model_dir : path to a model artifact directory produced by
-        `core.models.registry.save_model_artifact`
-        (`models/decision_tree/v1/`), registered as the initially active
-        model. Optional — omit to bootstrap the dataset only.
+    builtin_model_dirs : model artifact directories produced by
+        `core.models.registry.save_model_artifact`, each registered as a
+        protected built-in model. Optional — omit to bootstrap the dataset only.
+    default_model_dir : which of `builtin_model_dirs` becomes active on a
+        fresh database (defaults to the first). On an existing database it is
+        activated only the first time it is registered, and only if the
+        active model is another built-in one — a model the user trained and
+        activated themselves is never replaced.
     """
 
     create_all_tables(engine)
@@ -73,12 +78,36 @@ def bootstrap_database(
     if builtin.validation_status == "valid" and not _has_active_dataset(session):
         dataset_repo.activate(session, builtin.id)
 
-    if initial_model_dir is not None:
-        _register_initial_model(
-            session, builtin, initial_model_dir, initial_model_id
-        )
+    if builtin_model_dirs:
+        _register_builtin_models(session, builtin, builtin_model_dirs, default_model_dir)
 
     session.commit()
+
+
+def _register_builtin_models(
+    session: Session,
+    builtin_dataset: Dataset,
+    model_dirs: Sequence[str | Path],
+    default_model_dir: str | Path | None,
+) -> None:
+    model_repo = ModelVersionRepositoryImpl()
+    default_path = Path(default_model_dir) if default_model_dir is not None else Path(model_dirs[0])
+
+    default_model: ModelVersion | None = None
+    default_newly_registered = False
+    for model_dir in model_dirs:
+        model_version, newly_registered = _register_builtin_model(session, builtin_dataset, model_dir)
+        if Path(model_dir) == default_path:
+            default_model, default_newly_registered = model_version, newly_registered
+
+    if default_model is None:
+        raise ValueError(f"default_model_dir {default_path} is not one of builtin_model_dirs.")
+
+    active = model_repo.get_active(session)
+    if active is None or (
+        default_newly_registered and active.is_builtin and active.id != default_model.id
+    ):
+        model_repo.activate(session, default_model.id)
 
 
 def _resync_builtin_dataset_path(
@@ -155,22 +184,24 @@ def _register_builtin_dataset(
     )
 
 
-def _register_initial_model(
-    session: Session,
-    builtin_dataset: Dataset,
-    model_dir: str | Path,
-    model_id_override: str | None,
-) -> None:
+def _register_builtin_model(
+    session: Session, builtin_dataset: Dataset, model_dir: str | Path
+) -> tuple[ModelVersion, bool]:
+    """Register one built-in model; returns (model_version, newly_registered)."""
+
     model_dir = Path(model_dir)
     metadata_path = model_dir / "metadata.json"
     if not metadata_path.exists():
         raise FileNotFoundError(f"metadata.json not found in {model_dir}")
 
     metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
-    model_id = model_id_override or metadata["model_id"]
+    model_id = metadata["model_id"]
 
     model_repo = ModelVersionRepositoryImpl()
 
+    # Built-in ids never collide with user-trained ones: next_model_id only
+    # generates "<model_type>_v<N>" past the existing maximum, and the
+    # built-in Elo model is "logistic_regression_elo_v1".
     existing = model_repo.get_by_model_id(session, model_id)
     if existing is not None:
         # Same self-healing rationale as _resync_builtin_dataset_path above.
@@ -178,9 +209,7 @@ def _register_initial_model(
         if existing.artifact_path != resolved_model_dir:
             existing.artifact_path = resolved_model_dir
             session.flush()
-        if model_repo.get_active(session) is None:
-            model_repo.activate(session, existing.id)
-        return
+        return existing, False
 
     try:
         model_version = model_repo.create(
@@ -199,5 +228,6 @@ def _register_initial_model(
         model_version = model_repo.get_by_model_id(session, model_id)
         if model_version is None:
             raise
+        return model_version, False
 
-    model_repo.activate(session, model_version.id)
+    return model_version, True

@@ -25,7 +25,7 @@ import joblib
 from sklearn.base import ClassifierMixin
 from sklearn.preprocessing import StandardScaler
 
-from core.config import CLASS_LABELS, FEATURE_VERSION
+from core.config import CLASS_LABELS
 
 
 @dataclass

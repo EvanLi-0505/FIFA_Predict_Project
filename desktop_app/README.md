@@ -26,7 +26,7 @@ the packaged app.
 
 Uses `frontend/dist/` if it already exists (run `npm run build` in
 `frontend/` first), and the real `datasets/builtin/results.csv` +
-`models/decision_tree/v1/` from the project tree directly — no bundling
+built-in models under `models/` from the project tree directly — no bundling
 needed to iterate.
 
 ## Build the release zip

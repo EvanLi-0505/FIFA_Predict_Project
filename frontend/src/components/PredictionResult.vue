@@ -1,12 +1,16 @@
 <script setup>
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 import ProbabilityChart from './ProbabilityChart.vue'
+import UpsetRiskBadge from './UpsetRiskBadge.vue'
 import { downloadPredictionReportMarkdown, downloadPredictionReportPdf } from '../utils/report'
 import { fetchTeamComparisonData } from '../utils/matchComparison'
+import { fetchUpsetHistory, upsetSummary } from '../utils/upset'
 
 const props = defineProps({
   result: { type: Object, required: true },
 })
+
+const upset = computed(() => upsetSummary(props.result))
 
 const OUTCOME_BADGE_CLASS = {
   'Home Win': 'badge-active',
@@ -25,6 +29,12 @@ async function buildReportPayload() {
   } catch {
     comparison = undefined
   }
+  let upsetHistory
+  try {
+    upsetHistory = await fetchUpsetHistory(props.result.home_team, props.result.away_team)
+  } catch {
+    upsetHistory = undefined
+  }
 
   return {
     homeTeam: props.result.home_team,
@@ -39,6 +49,7 @@ async function buildReportPayload() {
     modelVersion: props.result.model_version,
     datasetVersion: props.result.dataset_version,
     comparison,
+    upset: { ...upset.value, history: upsetHistory },
   }
 }
 
@@ -74,6 +85,21 @@ async function downloadPdf() {
       ({{ result.tournament_category }}) · {{ result.neutral ? 'Neutral venue' : 'Home venue' }}
     </p>
 
+    <div v-if="upset.level === 'high'" class="high-risk-banner">
+      <span>⚠</span>
+      <div>
+        HIGH-RISK PREDICTION / 高风险预测
+        <small>
+          {{ (upset.probability * 100).toFixed(1) }}% chance that {{ upset.underdogTeam }} beats
+          {{ upset.favoriteTeam }} — see the Upset Risk page for each team's upset history.
+        </small>
+      </div>
+    </div>
+    <p class="upset-line">
+      <UpsetRiskBadge :probability="upset.probability" :level="upset.level" />
+      <span class="muted">chance {{ upset.underdogTeam }} (underdog) wins outright</span>
+    </p>
+
     <ProbabilityChart
       :probabilities="result.probabilities"
       :predicted-outcome="result.predicted_outcome"
@@ -107,6 +133,13 @@ async function downloadPdf() {
 
 .result-header h3 {
   margin: 0;
+}
+
+.upset-line {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 8px 0 12px;
 }
 
 .result-footer {

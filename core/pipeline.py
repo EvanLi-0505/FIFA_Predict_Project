@@ -18,7 +18,9 @@ from core.feature_engineering.cold_start import (
     apply_cold_start,
     compute_cold_start_fill_values,
 )
+from core.config import ORIGINAL_FEATURE_VERSION
 from core.feature_engineering.differences import add_difference_features
+from core.feature_engineering.elo import add_elo_difference, add_elo_ratings
 from core.feature_engineering.team_history import generate_historical_features
 from core.feature_engineering.tournament import (
     encode_neutral,
@@ -57,15 +59,19 @@ class PipelineResult:
     Development Prompt.md Stage 0 audit, Conflict A)."""
 
     feature_columns: list[str]
-    """Canonical, ordered list of the 23 predictor variables for this
-    dataset version. The Decision Tree is order-sensitive — always use this
-    list, never re-derive it."""
+    """Canonical, ordered predictor list for the requested feature version
+    (the notebook's 23 for feature_v1). The Decision Tree is
+    order-sensitive — always use this list, never re-derive it."""
 
     tournament_dummy_columns: list[str]
 
     cold_start_fill_values: dict[str, float]
     """Must be serialized alongside any trained model — required to featurise
     future matches involving teams unseen at training time."""
+
+    elo_ratings: dict[str, float]
+    """Each team's Elo rating after the last completed match — the value a
+    feature_v2 model uses when predicting a future match."""
 
 
 def build_completed_matches(df_raw: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
@@ -96,8 +102,14 @@ def build_completed_matches(df_raw: pd.DataFrame) -> tuple[pd.DataFrame, pd.Data
     return completed_matches, prediction_fixtures
 
 
-def run_feature_pipeline(df_raw: pd.DataFrame) -> PipelineResult:
-    """Run the full Phase 3-6.8 pipeline on a raw results.csv dataframe."""
+def run_feature_pipeline(
+    df_raw: pd.DataFrame, feature_version: str = ORIGINAL_FEATURE_VERSION
+) -> PipelineResult:
+    """Run the full Phase 3-6.8 pipeline on a raw results.csv dataframe.
+
+    Elo columns are always computed, but only feature_v2's `feature_columns`
+    select them — feature_v1 output is identical to the notebook's.
+    """
 
     completed_matches, prediction_fixtures = build_completed_matches(df_raw)
 
@@ -107,6 +119,7 @@ def run_feature_pipeline(df_raw: pd.DataFrame) -> PipelineResult:
     timeline = timeline.sort_values("date").reset_index(drop=True)
 
     featured_data = generate_historical_features(timeline)
+    featured_data, elo_ratings = add_elo_ratings(featured_data)
 
     model_data = featured_data[
         featured_data["home_score"].notna() & featured_data["away_score"].notna()
@@ -131,7 +144,10 @@ def run_feature_pipeline(df_raw: pd.DataFrame) -> PipelineResult:
     model_data = encode_neutral(model_data)
     final_prediction_data = encode_neutral(final_prediction_data)
 
-    feature_columns = build_feature_columns(tournament_dummy_columns)
+    model_data = add_elo_difference(model_data)
+    final_prediction_data = add_elo_difference(final_prediction_data)
+
+    feature_columns = build_feature_columns(tournament_dummy_columns, feature_version)
 
     _validate_final_matrix(model_data, feature_columns)
 
@@ -142,6 +158,7 @@ def run_feature_pipeline(df_raw: pd.DataFrame) -> PipelineResult:
         feature_columns=feature_columns,
         tournament_dummy_columns=tournament_dummy_columns,
         cold_start_fill_values=cold_start_fill_values,
+        elo_ratings=elo_ratings,
     )
 
 

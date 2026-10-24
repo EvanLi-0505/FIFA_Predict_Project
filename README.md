@@ -1,9 +1,9 @@
 # FIFA World Cup Match Prediction
 
 Predicts international football match outcomes (Home Win / Draw / Home
-Loss) with a Decision Tree trained on historical team form, goal
-statistics, and tournament context. Originally a Data Mining coursework
-Colab notebook; this repository is the production version, shipped as both a **Web
+Loss) from historical team form, goal statistics, tournament context, and
+pre-match Elo team ratings. Originally a Data Mining coursework Colab
+notebook; this repository is the production version, shipped as both a **Web
 application** and a **Windows Desktop application**, sharing one
 machine-learning core so both editions produce identical predictions for
 the same input.
@@ -59,9 +59,9 @@ export DATABASE_URL="mysql+pymysql://<user>:<password>@<host>:3306/<database>"
 Create the target database first (`CREATE DATABASE fifa_prediction;`) —
 tables are created automatically on first startup
 (`database.bootstrap.bootstrap_database`); there is no separate migration
-step to run for a fresh database. The built-in dataset and the production
-Decision Tree model are also registered automatically on first startup —
-no manual dataset/model initialization needed.
+step to run for a fresh database. The built-in dataset and both built-in
+models are also registered automatically on first startup — no manual
+dataset/model initialization needed.
 
 ```bash
 .venv/Scripts/python.exe -m uvicorn backend.app.main:app --reload --port 8000
@@ -190,13 +190,45 @@ on, never whatever dataset happens to be separately flagged "active" (see
   `desktop_app/build_release.py` builds the frontend, bundles everything
   with PyInstaller, and writes the release zip to `desktop_app/release/`.
 
+## Models
+
+| Built-in model | Features | Accuracy* | World Cup* |
+|---|---|---|---|
+| `logistic_regression_elo_v1` (default) | `feature_v2`: team form + Elo ratings | 59.4% | 56.6% |
+| `decision_tree_v1` (original notebook) | `feature_v1`: the notebook's 23 features | 51.2% | 46.1% |
+
+\* Rolling-window validation: for each two-year window from 2010 to 2025,
+trained only on earlier matches (15,506 test matches, 256 World Cup
+matches). Always predicting "Home Win" scores 47.6%.
+
+`feature_v2` adds pre-match Elo ratings computed from the same dataset
+with the published World Football Elo rules
+([`core/feature_engineering/elo.py`](core/feature_engineering/elo.py)).
+`feature_v1` and the original Decision Tree are unchanged and still pass
+the bit-for-bit notebook parity tests. Both feature sets, and every model
+type (including a soft-voting ensemble), can be trained from Model
+Management.
+
+## Upset risk
+
+The **Upset Risk** page, every prediction, the history list, and the
+Markdown/PDF reports show the probability that the underdog — the side the
+active model gives the lower win chance — wins outright (draws excluded):
+low below 15%, medium 15–30%, high above 30%, with a prominent
+"HIGH-RISK PREDICTION" mark above 30%. With the Elo model this probability
+is well calibrated (held-out matches it rated 30–40% ended in an upset
+33.5% of the time).
+
+The page also lists each team's historical upsets with dates: completed
+matches the underdog won although the model gave it under 20% beforehand
+([`core/analytics/upset.py`](core/analytics/upset.py)).
+
 ## Known limitations
 
-Inherited from the original notebook's methodology:
-no player-level data, injuries, or suspensions; no FIFA ranking/Elo
-features; a fixed 5-match recent-form window; draws remain the hardest
-class to predict. Predictions are statistical estimates for reference
-only — see the in-app disclaimer.
+No player-level data, injuries, or suspensions; no FIFA ranking; a fixed
+5-match recent-form window; draws remain the hardest class to predict.
+Predictions are statistical estimates for reference only — see the in-app
+disclaimer.
 
 ## License
 

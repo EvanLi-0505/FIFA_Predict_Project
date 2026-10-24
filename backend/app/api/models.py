@@ -23,7 +23,10 @@ def train_model(
 ) -> ModelVersionResponse:
     try:
         model_version = model_service.train_model(
-            session, dataset_id=request.dataset_id, model_type=request.model_type
+            session,
+            dataset_id=request.dataset_id,
+            model_type=request.model_type,
+            feature_version=request.feature_version,
         )
     except ModelTrainingError as error:
         raise HTTPException(status_code=400, detail=str(error)) from error

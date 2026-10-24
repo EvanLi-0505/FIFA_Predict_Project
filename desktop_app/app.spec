@@ -67,6 +67,7 @@ datas = [d for d in datas if "tests" not in d[1].split("\\") and "tests" not in 
 datas += [
     (str(PROJECT_ROOT / "datasets" / "builtin" / "results.csv"), "datasets/builtin"),
     (str(PROJECT_ROOT / "models" / "decision_tree" / "v1"), "models/decision_tree/v1"),
+    (str(PROJECT_ROOT / "models" / "logistic_regression" / "elo_v1"), "models/logistic_regression/elo_v1"),
     # Vite's dist/ contents are flattened one level (no "dist" folder in
     # the bundle) — see main.py's frontend_dist_dir() for why.
     (str(PROJECT_ROOT / "frontend" / "dist"), "frontend"),

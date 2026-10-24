@@ -5,6 +5,8 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
+from core.config import DEFAULT_FEATURE_VERSION
+
 
 class ModelVersionResponse(BaseModel):
     id: int
@@ -22,4 +24,5 @@ class ModelVersionResponse(BaseModel):
 
 class TrainModelRequest(BaseModel):
     dataset_id: int
-    model_type: str = Field(default="decision_tree")
+    model_type: str = Field(default="logistic_regression")
+    feature_version: str = Field(default=DEFAULT_FEATURE_VERSION)

@@ -8,7 +8,9 @@ column order, so `build_feature_columns` must always be used to construct
 
 from __future__ import annotations
 
+from core.config import ELO_FEATURE_VERSION, ORIGINAL_FEATURE_VERSION
 from core.feature_engineering.differences import DIFFERENCE_FEATURES
+from core.feature_engineering.elo import ELO_FEATURES
 
 # Original historical team-performance features (10)
 BASE_FEATURES = [
@@ -27,8 +29,11 @@ BASE_FEATURES = [
 ]
 
 
-def build_feature_columns(tournament_dummy_columns: list[str]) -> list[str]:
-    """Build the full ordered predictor list: base + difference + context.
+def build_feature_columns(
+    tournament_dummy_columns: list[str], feature_version: str = ORIGINAL_FEATURE_VERSION
+) -> list[str]:
+    """Build the full ordered predictor list: base + difference (+ Elo for
+    feature_v2) + context.
 
     `tournament_dummy_columns` must come from
     `core.feature_engineering.tournament.encode_tournament_categories`,
@@ -38,4 +43,8 @@ def build_feature_columns(tournament_dummy_columns: list[str]) -> list[str]:
 
     context_features = ["neutral"] + tournament_dummy_columns
 
-    return BASE_FEATURES + DIFFERENCE_FEATURES + context_features
+    if feature_version == ORIGINAL_FEATURE_VERSION:
+        return BASE_FEATURES + DIFFERENCE_FEATURES + context_features
+    if feature_version == ELO_FEATURE_VERSION:
+        return BASE_FEATURES + DIFFERENCE_FEATURES + ELO_FEATURES + context_features
+    raise ValueError(f"Unknown feature_version {feature_version!r}.")

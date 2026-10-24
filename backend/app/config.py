@@ -16,6 +16,12 @@ from database.engine import build_sqlite_url
 BACKEND_DIR = Path(__file__).resolve().parent.parent
 PROJECT_ROOT = BACKEND_DIR.parent
 
+# Built-in models, relative to BUILTIN_MODELS_DIR. decision_tree/v1 is the
+# original notebook model (feature_v1); logistic_regression/elo_v1 is the
+# Elo-feature model (feature_v2) that new installs start with.
+BUILTIN_MODEL_SUBDIRS = ("decision_tree/v1", "logistic_regression/elo_v1")
+DEFAULT_BUILTIN_MODEL_SUBDIR = "logistic_regression/elo_v1"
+
 
 class Settings:
     # --- Database ---------------------------------------------------
@@ -42,12 +48,19 @@ class Settings:
     models_dir: Path = Path(
         os.environ.get("MODELS_DIR", str(PROJECT_ROOT / "models"))
     )
-    initial_model_dir: Path = Path(
-        os.environ.get(
-            "INITIAL_MODEL_DIR",
-            str(PROJECT_ROOT / "models" / "decision_tree" / "v1"),
-        )
+    # Root holding the shipped, protected model artifacts (read-only; the
+    # Desktop build bundles them separately from the writable MODELS_DIR).
+    builtin_models_dir: Path = Path(
+        os.environ.get("BUILTIN_MODELS_DIR", str(PROJECT_ROOT / "models"))
     )
+
+    @property
+    def builtin_model_dirs(self) -> list[Path]:
+        return [self.builtin_models_dir / subdir for subdir in BUILTIN_MODEL_SUBDIRS]
+
+    @property
+    def default_builtin_model_dir(self) -> Path:
+        return self.builtin_models_dir / DEFAULT_BUILTIN_MODEL_SUBDIR
 
     # --- CORS -----------------------------------------------------------
     cors_allow_origins: list[str] = os.environ.get(

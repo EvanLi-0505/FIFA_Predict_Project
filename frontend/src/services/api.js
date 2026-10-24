@@ -47,6 +47,32 @@ export const api = {
     }
   },
 
+  // Same request shape as predict(), but not recorded in prediction history.
+  async getUpsetRisk({ homeTeam, awayTeam, hostCountry, tournament }) {
+    try {
+      const { data } = await client.post('/api/upsets/risk', {
+        home_team: homeTeam,
+        away_team: awayTeam,
+        host_country: hostCountry,
+        tournament,
+      })
+      return data
+    } catch (error) {
+      throw unwrapError(error)
+    }
+  },
+
+  async getTeamUpsets(teamName, limit = 20) {
+    try {
+      const { data } = await client.get(`/api/upsets/teams/${encodeURIComponent(teamName)}`, {
+        params: { limit },
+      })
+      return data
+    } catch (error) {
+      throw unwrapError(error)
+    }
+  },
+
   async getHistory(limit = 50) {
     try {
       const { data } = await client.get('/api/history', { params: { limit } })
@@ -104,11 +130,12 @@ export const api = {
     }
   },
 
-  async trainModel({ datasetId, modelType }) {
+  async trainModel({ datasetId, modelType, featureVersion }) {
     try {
       const { data } = await client.post('/api/models/train', {
         dataset_id: datasetId,
         model_type: modelType,
+        feature_version: featureVersion,
       })
       return data
     } catch (error) {

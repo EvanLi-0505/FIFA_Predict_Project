@@ -39,6 +39,11 @@ TOURNAMENT_CATEGORIES = [
     "World Cup Qualification",
 ]
 
-# Feature schema / model artifact format version.
-# Bump this only if the predictor variable set or ordering changes.
-FEATURE_VERSION = "feature_v1"
+# Feature schema versions, stamped into every trained model's metadata.
+# feature_v1: the notebook's 23 predictors, unchanged (notebook parity).
+# feature_v2: feature_v1 + pre-match Elo ratings (core/feature_engineering/elo.py),
+#             added in v2.1.0 — not part of the original notebook methodology.
+ORIGINAL_FEATURE_VERSION = "feature_v1"
+ELO_FEATURE_VERSION = "feature_v2"
+SUPPORTED_FEATURE_VERSIONS = (ORIGINAL_FEATURE_VERSION, ELO_FEATURE_VERSION)
+DEFAULT_FEATURE_VERSION = ELO_FEATURE_VERSION

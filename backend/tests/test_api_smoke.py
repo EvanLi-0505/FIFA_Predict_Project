@@ -29,9 +29,7 @@ os.environ["MODELS_DIR"] = str(_TEST_DATA_DIR / "models")
 os.environ["BUILTIN_DATASET_CSV"] = str(
     PROJECT_ROOT / "datasets" / "builtin" / "results.csv"
 )
-os.environ["INITIAL_MODEL_DIR"] = str(
-    PROJECT_ROOT / "models" / "decision_tree" / "v1"
-)
+os.environ["BUILTIN_MODELS_DIR"] = str(PROJECT_ROOT / "models")
 
 import pytest  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402
@@ -65,10 +63,12 @@ def test_builtin_dataset_and_model_are_bootstrapped_active(client):
     assert builtin["is_active"] is True
     assert builtin["row_count"] == 49520
 
-    models = client.get("/api/models").json()
-    assert len(models) == 1
-    assert models[0]["model_id"] == "decision_tree_v1"
-    assert models[0]["is_active"] is True
+    models = {m["model_id"]: m for m in client.get("/api/models").json()}
+    assert set(models) == {"decision_tree_v1", "logistic_regression_elo_v1"}
+    assert all(m["is_builtin"] for m in models.values())
+    assert models["logistic_regression_elo_v1"]["is_active"] is True
+    assert models["logistic_regression_elo_v1"]["feature_version"] == "feature_v2"
+    assert models["decision_tree_v1"]["feature_version"] == "feature_v1"
 
 
 def test_teams_endpoint_lists_known_teams(client):
@@ -80,7 +80,19 @@ def test_teams_endpoint_lists_known_teams(client):
     assert teams == sorted(teams)
 
 
-def test_prediction_endpoint_matches_core_directly(client):
+@pytest.mark.parametrize(
+    "model_id, artifact_subdir",
+    [
+        ("logistic_regression_elo_v1", ("logistic_regression", "elo_v1")),
+        ("decision_tree_v1", ("decision_tree", "v1")),
+    ],
+)
+def test_prediction_endpoint_matches_core_directly(client, model_id, artifact_subdir):
+    models = client.get("/api/models").json()
+    default_id = next(m["id"] for m in models if m["is_active"])
+    target_id = next(m["id"] for m in models if m["model_id"] == model_id)
+    client.post(f"/api/models/{target_id}/activate")
+
     response = client.post(
         "/api/predictions",
         json={
@@ -90,11 +102,12 @@ def test_prediction_endpoint_matches_core_directly(client):
             "tournament": "FIFA World Cup",
         },
     )
+    client.post(f"/api/models/{default_id}/activate")
     assert response.status_code == 200
     body = response.json()
 
     assert body["predicted_outcome"] in {"Home Win", "Draw", "Home Loss"}
-    assert body["model_version"] == "decision_tree_v1"
+    assert body["model_version"] == model_id
     assert body["dataset_version"] == "builtin_v1"
     assert abs(sum(body["probabilities"].values()) - 1.0) < 1e-9
 
@@ -107,10 +120,13 @@ def test_prediction_endpoint_matches_core_directly(client):
     from core.prediction.predictor import predict_match
     from core.prediction.team_state import build_team_latest_state_index
 
+    loaded = load_model_artifact(PROJECT_ROOT / "models" / Path(*artifact_subdir))
     df_raw = load_raw_dataset(PROJECT_ROOT / "datasets" / "builtin" / "results.csv")
-    pipeline_result = run_feature_pipeline(df_raw)
-    loaded = load_model_artifact(PROJECT_ROOT / "models" / "decision_tree" / "v1")
-    team_state_index = build_team_latest_state_index(pipeline_result.featured_data)
+    pipeline_result = run_feature_pipeline(df_raw, loaded.metadata.feature_version)
+    team_state_index = build_team_latest_state_index(
+        pipeline_result.featured_data, pipeline_result.elo_ratings
+    )
+    assert pipeline_result.feature_columns == loaded.metadata.feature_columns
 
     direct_result = predict_match(
         home_team="England",
@@ -191,7 +207,7 @@ def test_upload_train_and_switch_to_new_dataset(client):
     # Activating a dataset does NOT by itself change what predictions use —
     # predictions always follow the ACTIVE MODEL's own training dataset
     # (see feature_service module docstring). The active model is still
-    # decision_tree_v1, trained on builtin_v1, so predictions must keep
+    # the built-in default, trained on builtin_v1, so predictions must keep
     # reporting builtin_v1 until a new model is trained and activated.
     predict_response = client.post(
         "/api/predictions",
@@ -204,7 +220,7 @@ def test_upload_train_and_switch_to_new_dataset(client):
     )
     assert predict_response.status_code == 200
     assert predict_response.json()["dataset_version"] == "builtin_v1"
-    assert predict_response.json()["model_version"] == "decision_tree_v1"
+    assert predict_response.json()["model_version"] == "logistic_regression_elo_v1"
 
     # Train a brand new model on the uploaded dataset and switch to it.
     train_response = client.post(
@@ -388,3 +404,77 @@ def test_clear_all_history(client):
 
     stats_after = client.get("/api/history/stats").json()
     assert stats_after["total"] == 0
+
+
+# --- Upset risk -------------------------------------------------------------
+
+
+def _activate_default_builtin(client):
+    models = client.get("/api/models").json()
+    default_id = next(m["id"] for m in models if m["model_id"] == "logistic_regression_elo_v1")
+    client.post(f"/api/models/{default_id}/activate")
+
+
+MATCH = {
+    "home_team": "Brazil",
+    "away_team": "Germany",
+    "host_country": "Brazil",
+    "tournament": "FIFA World Cup",
+}
+
+
+def test_predictions_and_history_carry_upset_risk(client):
+    _activate_default_builtin(client)
+
+    body = client.post("/api/predictions", json=MATCH).json()
+    probabilities = body["probabilities"]
+    expected = min(probabilities["Home Win"], probabilities["Home Loss"])
+    assert abs(body["upset_probability"] - expected) < 1e-12
+    assert body["upset_risk_level"] in {"low", "medium", "high"}
+    assert body["upset_favorite_outcome"] in {"Home Win", "Home Loss"}
+
+    latest = client.get("/api/history").json()[0]
+    assert latest["id"] == body["prediction_id"]
+    assert latest["upset_probability"] == body["upset_probability"]
+    assert latest["upset_risk_level"] == body["upset_risk_level"]
+
+
+def test_upset_risk_endpoint_matches_prediction_and_is_not_recorded(client):
+    _activate_default_builtin(client)
+    prediction = client.post("/api/predictions", json=MATCH).json()
+    history_count = len(client.get("/api/history", params={"limit": 500}).json())
+
+    response = client.post("/api/upsets/risk", json=MATCH)
+    assert response.status_code == 200
+    risk = response.json()
+    assert risk["upset_probability"] == prediction["upset_probability"]
+    assert risk["model_version"] == "logistic_regression_elo_v1"
+    assert len(client.get("/api/history", params={"limit": 500}).json()) == history_count
+
+
+def test_team_upsets_lists_dated_upsets_below_threshold(client):
+    _activate_default_builtin(client)
+
+    response = client.get("/api/upsets/teams/Brazil", params={"limit": 10})
+    assert response.status_code == 200
+    body = response.json()
+    assert body["team"] == "Brazil"
+    assert body["max_probability"] == 0.2
+    assert body["summary"]["matches"] > 1000
+    assert body["summary"]["upsets_caused"] + body["summary"]["upsets_suffered"] >= len(body["matches"])
+
+    matches = body["matches"]
+    assert 0 < len(matches) <= 10
+    assert [m["date"] for m in matches] == sorted((m["date"] for m in matches), reverse=True)
+    for m in matches:
+        assert m["upset_probability"] < 0.2
+        assert "Brazil" in (m["home_team"], m["away_team"])
+        assert (m["role"] == "caused") == (m["winner"] == "Brazil")
+
+
+def test_team_upsets_for_unknown_team_is_empty(client):
+    _activate_default_builtin(client)
+
+    body = client.get("/api/upsets/teams/Atlantis FC").json()
+    assert body["summary"] == {"matches": 0, "upsets_caused": 0, "upsets_suffered": 0}
+    assert body["matches"] == []

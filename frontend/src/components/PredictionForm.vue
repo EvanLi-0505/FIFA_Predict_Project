@@ -1,11 +1,16 @@
 <script setup>
-import { reactive, computed } from 'vue'
+import { reactive, computed, watch } from 'vue'
 import TeamSelector from './TeamSelector.vue'
 import { TOURNAMENT_OPTIONS } from '../stores/predictionStore'
 
 const props = defineProps({
   teams: { type: Array, default: () => [] },
   submitting: { type: Boolean, default: false },
+  submitLabel: { type: String, default: 'Predict' },
+  submittingLabel: { type: String, default: 'Predicting…' },
+  // { homeTeam, awayTeam, hostCountry, tournament } — overwrites the fields
+  // whenever a new object is passed (e.g. picking a history record).
+  prefill: { type: Object, default: null },
 })
 
 const emit = defineEmits(['submit'])
@@ -16,6 +21,13 @@ const form = reactive({
   hostCountry: '',
   tournament: 'FIFA World Cup',
 })
+
+watch(
+  () => props.prefill,
+  (values) => {
+    if (values) Object.assign(form, values)
+  },
+)
 
 const isValid = computed(
   () =>
@@ -79,7 +91,7 @@ function handleSubmit() {
     </p>
 
     <button type="submit" :disabled="!isValid || submitting">
-      {{ submitting ? 'Predicting…' : 'Predict' }}
+      {{ submitting ? submittingLabel : submitLabel }}
     </button>
   </form>
 </template>

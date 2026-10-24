@@ -15,7 +15,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from backend.app.api import datasets, history, models, predictions, team_stats, teams
+from backend.app.api import datasets, history, models, predictions, team_stats, teams, upsets
 from backend.app.config import settings
 from backend.app.db.session import SessionFactory, engine
 from backend.app.services import feature_service, team_stats_service
@@ -33,7 +33,8 @@ async def lifespan(app: FastAPI):
             engine,
             session,
             builtin_dataset_csv=settings.builtin_dataset_csv,
-            initial_model_dir=settings.initial_model_dir,
+            builtin_model_dirs=settings.builtin_model_dirs,
+            default_model_dir=settings.default_builtin_model_dir,
         )
         logger.info("Database ready.")
 
@@ -66,7 +67,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title="FIFA World Cup Match Prediction API",
-    version="2.0.1",
+    version="2.1.0",
     lifespan=lifespan,
 )
 
@@ -84,6 +85,7 @@ app.include_router(teams.router)
 app.include_router(datasets.router)
 app.include_router(models.router)
 app.include_router(team_stats.router)
+app.include_router(upsets.router)
 
 
 @app.get("/api/health", tags=["health"])

@@ -20,12 +20,18 @@ import pandas as pd
 TeamState = dict[str, float]
 
 
-def build_team_latest_state_index(featured_data: pd.DataFrame) -> dict[str, TeamState]:
+def build_team_latest_state_index(
+    featured_data: pd.DataFrame, elo_ratings: dict[str, float] | None = None
+) -> dict[str, TeamState]:
     """Build a {team_name: latest_feature_state} index.
 
     `featured_data` must be sorted chronologically ascending (this is
     guaranteed by `core.feature_engineering.team_history.generate_historical_features`,
     which always returns its result in ascending-date order).
+
+    `elo_ratings` (`PipelineResult.elo_ratings`) adds an "elo" entry per
+    team — the rating after its last completed match, which feature_v2
+    models need.
     """
 
     index: dict[str, TeamState] = {}
@@ -65,7 +71,15 @@ def build_team_latest_state_index(featured_data: pd.DataFrame) -> dict[str, Team
             "exp": row.away_matches_available,
         }
 
+    if elo_ratings is not None:
+        for team, state in index.items():
+            state["elo"] = elo_ratings[team]
+
     return index
+
+
+def has_elo_ratings(team_state_index: dict[str, TeamState]) -> bool:
+    return all("elo" in state for state in team_state_index.values())
 
 
 def list_known_teams(team_state_index: dict[str, TeamState]) -> list[str]:

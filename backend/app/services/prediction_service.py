@@ -19,7 +19,7 @@ _prediction_repo = PredictionRepositoryImpl()
 
 @dataclass
 class PredictionOutcome:
-    prediction_id: int
+    prediction_id: int | None
     home_team: str
     away_team: str
     host_country: str
@@ -40,7 +40,11 @@ def predict(
     away_team: str,
     host_country: str,
     tournament: str,
+    record_history: bool = True,
 ) -> PredictionOutcome:
+    """Predict a match. `record_history=False` (Upset Risk page analysis)
+    skips the history record; the returned `prediction_id` is then None."""
+
     context = get_inference_context(session)
 
     result = predict_match(
@@ -55,6 +59,22 @@ def predict(
         tournament_dummy_columns=context.tournament_dummy_columns,
         feature_columns=context.feature_columns,
     )
+
+    if not record_history:
+        return PredictionOutcome(
+            prediction_id=None,
+            home_team=result.home_team,
+            away_team=result.away_team,
+            host_country=result.host_country,
+            tournament=result.tournament,
+            tournament_category=result.tournament_category,
+            neutral=result.neutral,
+            probabilities=result.probabilities,
+            predicted_outcome=result.predicted_outcome,
+            confidence=result.confidence,
+            model_version=context.model_id,
+            dataset_version=context.dataset_version_label,
+        )
 
     record = _prediction_repo.create(
         session,

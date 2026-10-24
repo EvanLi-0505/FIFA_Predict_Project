@@ -8,8 +8,10 @@
 // disclaimer.
 
 import { jsPDF } from 'jspdf'
+import { RISK_LEVEL_LABELS, RISK_LEVEL_LABELS_ZH } from './upset'
 
 const OUTCOME_ORDER = ['Home Win', 'Draw', 'Home Loss']
+const RISK_COLORS_RGB = { low: [62, 201, 139], medium: [242, 184, 75], high: [240, 87, 107] }
 const RATE_CATEGORIES = ['Win rate', 'Draw rate', 'Loss rate']
 
 const OUTCOME_COLORS_RGB = {
@@ -64,6 +66,14 @@ export function downloadPredictionReportMarkdown(report) {
   )
   lines.push(`**Generated:** ${timestamp.toLocaleString()}`)
   lines.push('')
+  if (report.upset?.level === 'high') {
+    lines.push('> ## ⚠ HIGH-RISK PREDICTION / 高风险预测')
+    lines.push(
+      `> ${report.upset.underdogTeam} (underdog) has a ${pct(report.upset.probability)} chance of ` +
+        `beating ${report.upset.favoriteTeam} outright — above the 30% high-risk threshold.`,
+    )
+    lines.push('')
+  }
   lines.push(`## Predicted outcome: **${report.predictedOutcome}**`)
   lines.push('')
   lines.push('| Outcome | Probability |')
@@ -77,6 +87,43 @@ export function downloadPredictionReportMarkdown(report) {
     `**Model:** \`${report.modelVersion}\`  **Dataset:** \`${report.datasetVersion}\`  ` +
       `**Confidence:** ${(report.confidence * 100).toFixed(1)}%`,
   )
+
+  if (report.upset) {
+    const { upset } = report
+    lines.push('')
+    lines.push('## Upset risk / 爆冷风险')
+    lines.push('')
+    lines.push(
+      `**${pct(upset.probability)}** chance that ${upset.underdogTeam} (underdog) beats ` +
+        `${upset.favoriteTeam} (favorite) outright — ` +
+        `**${RISK_LEVEL_LABELS[upset.level]} / ${RISK_LEVEL_LABELS_ZH[upset.level]}**`,
+    )
+    lines.push('')
+    lines.push('Tiers: Low < 15% · Medium 15–30% · High > 30% (draws are not counted as upsets).')
+    if (upset.history) {
+      lines.push('')
+      lines.push(
+        `### Historical upsets (underdog won despite a pre-match chance below ${pct(upset.history.home.max_probability)})`,
+      )
+      for (const team of [upset.history.home, upset.history.away]) {
+        lines.push('')
+        lines.push(
+          `**${team.team}** — ${team.summary.matches} matches · caused ${team.summary.upsets_caused} · ` +
+            `suffered ${team.summary.upsets_suffered}`,
+        )
+        if (!team.matches.length) continue
+        lines.push('')
+        lines.push('| Date | Match | Score | Tournament | Pre-match chance | Role |')
+        lines.push('|---|---|---|---|---:|---|')
+        for (const m of team.matches) {
+          lines.push(
+            `| ${m.date} | ${m.home_team} vs ${m.away_team} | ${m.home_score}–${m.away_score} | ` +
+              `${m.tournament} | ${pct(m.upset_probability)} | ${m.role === 'caused' ? 'Caused' : 'Suffered'} |`,
+          )
+        }
+      }
+    }
+  }
 
   if (report.comparison) {
     const { home, away } = report.comparison
@@ -122,6 +169,10 @@ function formatSigned(value) {
   return value > 0 ? `+${value}` : `${value}`
 }
 
+function pct(value) {
+  return `${(value * 100).toFixed(1)}%`
+}
+
 // ---------------------------------------------------------------------
 // PDF
 // ---------------------------------------------------------------------
@@ -134,10 +185,13 @@ function formatSigned(value) {
 // rendering goes through the browser/OS font stack, which already
 // handles CJK correctly — and that image is placed into the PDF like any
 // other graphic. The English text renders as normal vector PDF text.
-function renderTextToPngDataUrl(text, { fontPx = 20, maxWidthPx = 1400, color = '#6b7394' } = {}) {
+function renderTextToPngDataUrl(
+  text,
+  { fontPx = 20, maxWidthPx = 1400, color = '#6b7394', fontWeight = 'normal' } = {},
+) {
   const canvas = document.createElement('canvas')
   const ctx = canvas.getContext('2d')
-  ctx.font = `${fontPx}px "Segoe UI", sans-serif`
+  ctx.font = `${fontWeight} ${fontPx}px "Segoe UI", sans-serif`
 
   // Manual word-wrap: canvas has no built-in text wrapping.
   const words = text.split('')
@@ -158,7 +212,7 @@ function renderTextToPngDataUrl(text, { fontPx = 20, maxWidthPx = 1400, color = 
   canvas.width = maxWidthPx
   canvas.height = lineHeight * lines.length
 
-  ctx.font = `${fontPx}px "Segoe UI", sans-serif`
+  ctx.font = `${fontWeight} ${fontPx}px "Segoe UI", sans-serif`
   ctx.fillStyle = color
   ctx.textBaseline = 'top'
   lines.forEach((line, i) => ctx.fillText(line, 0, i * lineHeight))
@@ -186,6 +240,9 @@ function renderTextToPngDataUrl(text, { fontPx = 20, maxWidthPx = 1400, color = 
  *   if that data failed to load; the report still works without it.
  * @param {{stats: object, series: Array}} [report.comparison.home]
  * @param {{stats: object, series: Array}} [report.comparison.away]
+ * @param {object} [report.upset] `upsetSummary()` output plus optional
+ *   `history` (`fetchUpsetHistory`) — adds the upset-risk section, each
+ *   team's historical upsets, and the high-risk banner above 30%.
  */
 export function downloadPredictionReportPdf(report) {
   const timestamp = report.timestamp ? new Date(report.timestamp) : new Date()
@@ -212,6 +269,10 @@ export function downloadPredictionReportPdf(report) {
   doc.text(`Generated: ${timestamp.toLocaleString()}`, marginX, y)
   y += 26
 
+  if (report.upset?.level === 'high') {
+    y = drawHighRiskBanner(doc, report.upset, marginX, y, contentWidth)
+  }
+
   doc.setTextColor(26, 31, 54)
   doc.setFont('helvetica', 'bold')
   doc.setFontSize(13)
@@ -232,7 +293,13 @@ export function downloadPredictionReportPdf(report) {
   )
   y += 26
 
+  if (report.upset) {
+    y = drawUpsetRisk(doc, report.upset, marginX, y, contentWidth)
+    y += 16
+  }
+
   if (report.comparison) {
+    y = ensureSpace(doc, y, 260)
     y = drawSectionTitle(doc, 'Head-to-head: lifetime record', marginX, y)
     y = drawGroupedBars(doc, report, marginX, y)
     y += 16
@@ -242,6 +309,12 @@ export function downloadPredictionReportPdf(report) {
     y += 10
   }
 
+  if (report.upset?.history) {
+    y += 10
+    y = drawUpsetHistory(doc, report.upset.history, marginX, y, contentWidth)
+  }
+
+  y = ensureSpace(doc, y, 110)
   y += 14
   doc.setDrawColor(230, 233, 242)
   doc.line(marginX, y, pageWidth - marginX, y)
@@ -261,6 +334,152 @@ export function downloadPredictionReportPdf(report) {
   doc.addImage(zh.dataUrl, 'PNG', marginX, y, zhWidthPt, zhHeightPt)
 
   doc.save(`${buildFilenameBase(report, timestamp)}.pdf`)
+}
+
+const PAGE_TOP_Y = 56
+const PAGE_BOTTOM_MARGIN = 48
+
+function ensureSpace(doc, y, needed) {
+  if (y + needed <= doc.internal.pageSize.getHeight() - PAGE_BOTTOM_MARGIN) return y
+  doc.addPage()
+  return PAGE_TOP_Y
+}
+
+function drawHighRiskBanner(doc, upset, x, y, width) {
+  doc.setFont('helvetica', 'normal')
+  doc.setFontSize(9)
+  const detail = doc.splitTextToSize(
+    `${upset.underdogTeam} (underdog) has a ${pct(upset.probability)} chance of beating ` +
+      `${upset.favoriteTeam} outright - above the 30% high-risk threshold.`,
+    width - 28,
+  )
+  const height = 34 + detail.length * 11
+  doc.setFillColor(...RISK_COLORS_RGB.high)
+  doc.roundedRect(x, y, width, height, 4, 4, 'F')
+
+  doc.setTextColor(255, 255, 255)
+  doc.setFont('helvetica', 'bold')
+  doc.setFontSize(15)
+  doc.text('HIGH-RISK PREDICTION', x + 14, y + 20)
+  const titleWidth = doc.getTextWidth('HIGH-RISK PREDICTION')
+
+  // Chinese label rasterised like the disclaimer (no CJK glyphs in jsPDF fonts).
+  // The image is 1.5x the font size tall with glyphs in the top ~2/3, so a
+  // 21pt-tall image gives ~14pt glyphs whose top lines up with the title's caps.
+  const zh = renderTextToPngDataUrl('高风险预测', {
+    fontPx: 60,
+    maxWidthPx: 320,
+    color: '#ffffff',
+    fontWeight: 'bold',
+  })
+  const zhHeight = 21
+  doc.addImage(zh.dataUrl, 'PNG', x + 22 + titleWidth, y + 7, (zh.width / zh.height) * zhHeight, zhHeight)
+
+  doc.setFont('helvetica', 'normal')
+  doc.setFontSize(9)
+  doc.text(detail, x + 14, y + 36)
+  return y + height + 18
+}
+
+function drawUpsetRisk(doc, upset, x, y, width) {
+  y = ensureSpace(doc, y, 90)
+  y = drawSectionTitle(doc, 'Upset risk (underdog wins outright)', x, y)
+
+  const [r, g, b] = RISK_COLORS_RGB[upset.level]
+  doc.setFont('helvetica', 'bold')
+  doc.setFontSize(20)
+  doc.setTextColor(r, g, b)
+  doc.text(pct(upset.probability), x, y + 14)
+  const numberWidth = doc.getTextWidth(pct(upset.probability))
+
+  doc.setFont('helvetica', 'normal')
+  doc.setFontSize(10)
+  doc.setTextColor(26, 31, 54)
+  doc.text(
+    `${RISK_LEVEL_LABELS[upset.level]}: ${upset.underdogTeam} (underdog) vs ${upset.favoriteTeam} (favorite)`,
+    x + numberWidth + 12,
+    y + 12,
+  )
+  y += 26
+
+  // 0-50% scale; underdog win chance can't exceed 50% by definition.
+  const barHeight = 8
+  doc.setFillColor(230, 233, 242)
+  doc.roundedRect(x, y, width, barHeight, 2, 2, 'F')
+  doc.setFillColor(r, g, b)
+  doc.roundedRect(x, y, width * Math.min(upset.probability / 0.5, 1), barHeight, 2, 2, 'F')
+  doc.setDrawColor(107, 115, 148)
+  doc.setFontSize(8)
+  doc.setTextColor(107, 115, 148)
+  for (const [threshold, label] of [[0.15, '15%'], [0.3, '30%']]) {
+    const tx = x + width * (threshold / 0.5)
+    doc.line(tx, y - 3, tx, y + barHeight + 3)
+    doc.text(label, tx, y + barHeight + 12, { align: 'center' })
+  }
+  doc.text('Low < 15%  |  Medium 15-30%  |  High > 30%', x + width, y + barHeight + 12, { align: 'right' })
+  return y + barHeight + 18
+}
+
+function drawUpsetHistory(doc, history, x, y, width) {
+  y = ensureSpace(doc, y, 60)
+  y = drawSectionTitle(
+    doc,
+    `Historical upsets (underdog won despite a pre-match chance below ${pct(history.home.max_probability)})`,
+    x,
+    y,
+  )
+
+  const columns = [
+    { label: 'Date', x: 0 },
+    { label: 'Match', x: 58 },
+    { label: 'Score', x: 228 },
+    { label: 'Chance', x: 262 },
+    { label: 'Role', x: 302 },
+    { label: 'Tournament', x: 346 },
+  ]
+
+  for (const team of [history.home, history.away]) {
+    y = ensureSpace(doc, y, 40)
+    doc.setFont('helvetica', 'bold')
+    doc.setFontSize(10)
+    doc.setTextColor(26, 31, 54)
+    doc.text(
+      `${team.team}: ${team.summary.matches} matches, caused ${team.summary.upsets_caused}, ` +
+        `suffered ${team.summary.upsets_suffered}`,
+      x,
+      y,
+    )
+    y += 14
+    if (!team.matches.length) {
+      y += 6
+      continue
+    }
+
+    doc.setFontSize(8)
+    doc.setTextColor(107, 115, 148)
+    columns.forEach((c) => doc.text(c.label, x + c.x, y))
+    y += 11
+    doc.setFont('helvetica', 'normal')
+    doc.setTextColor(26, 31, 54)
+    for (const m of team.matches) {
+      y = ensureSpace(doc, y, 12)
+      const row = [
+        m.date,
+        `${m.home_team} vs ${m.away_team}`,
+        `${m.home_score}-${m.away_score}`,
+        pct(m.upset_probability),
+        m.role === 'caused' ? 'Caused' : 'Suffered',
+        m.tournament,
+      ]
+      row.forEach((value, i) => {
+        const maxWidth = (columns[i + 1]?.x ?? width) - columns[i].x - 6
+        doc.text(doc.splitTextToSize(value, maxWidth)[0], x + columns[i].x, y)
+      })
+      y += 11
+    }
+    y += 8
+  }
+  return y
 }
 
 function drawSectionTitle(doc, title, x, y) {

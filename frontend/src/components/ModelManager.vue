@@ -1,6 +1,11 @@
 <script setup>
 import { onMounted, reactive, ref } from 'vue'
-import { useModelStore, MODEL_TYPE_OPTIONS } from '../stores/modelStore'
+import {
+  useModelStore,
+  MODEL_TYPE_OPTIONS,
+  FEATURE_VERSION_OPTIONS,
+  featureVersionLabel,
+} from '../stores/modelStore'
 import { useDatasetStore } from '../stores/datasetStore'
 
 const modelStore = useModelStore()
@@ -11,7 +16,8 @@ const actionBusyId = ref(null)
 
 const trainForm = reactive({
   datasetId: '',
-  modelType: 'decision_tree',
+  modelType: 'logistic_regression',
+  featureVersion: 'feature_v2',
 })
 
 onMounted(() => {
@@ -26,6 +32,7 @@ async function handleTrain() {
     await modelStore.trainModel({
       datasetId: Number(trainForm.datasetId),
       modelType: trainForm.modelType,
+      featureVersion: trainForm.featureVersion,
     })
   } catch (error) {
     actionError.value = error.message
@@ -62,9 +69,17 @@ function datasetLabel(datasetId) {
   return dataset ? dataset.version_label : `#${datasetId}`
 }
 
-function macroF1(model, key) {
-  const value = model.metrics?.[key]?.macro_f1
-  return typeof value === 'number' ? value.toFixed(4) : '—'
+function metric(model, split, name) {
+  const value = model.metrics?.[split]?.[name]
+  return typeof value === 'number' ? value : null
+}
+
+function percent(value) {
+  return value === null ? '—' : `${(value * 100).toFixed(1)}%`
+}
+
+function decimal(value) {
+  return value === null ? '—' : value.toFixed(3)
 }
 </script>
 
@@ -95,6 +110,14 @@ function macroF1(model, key) {
             </option>
           </select>
         </div>
+        <div class="field">
+          <label for="train-feature-version">Features</label>
+          <select id="train-feature-version" v-model="trainForm.featureVersion">
+            <option v-for="option in FEATURE_VERSION_OPTIONS" :key="option.value" :value="option.value">
+              {{ option.label }}
+            </option>
+          </select>
+        </div>
       </div>
       <button :disabled="!trainForm.datasetId || modelStore.training" @click="handleTrain">
         {{ modelStore.training ? 'Training…' : 'Train model' }}
@@ -110,9 +133,11 @@ function macroF1(model, key) {
         <thead>
           <tr>
             <th>Model</th>
+            <th>Features</th>
             <th>Dataset</th>
-            <th>Overall Macro F1</th>
-            <th>World Cup Macro F1</th>
+            <th>Accuracy</th>
+            <th>World Cup Accuracy</th>
+            <th>Macro F1</th>
             <th>Trained</th>
             <th></th>
           </tr>
@@ -124,9 +149,11 @@ function macroF1(model, key) {
               <span v-if="model.is_builtin" class="badge badge-builtin">Built-in · Protected</span>
               <span v-if="model.is_active" class="badge badge-active">Active</span>
             </td>
+            <td>{{ featureVersionLabel(model.feature_version) }}</td>
             <td>{{ datasetLabel(model.dataset_id) }}</td>
-            <td>{{ macroF1(model, 'overall_test') }}</td>
-            <td>{{ macroF1(model, 'world_cup_test') }}</td>
+            <td>{{ percent(metric(model, 'overall_test', 'accuracy')) }}</td>
+            <td>{{ percent(metric(model, 'world_cup_test', 'accuracy')) }}</td>
+            <td>{{ decimal(metric(model, 'overall_test', 'macro_f1')) }}</td>
             <td class="muted">{{ new Date(model.created_at).toLocaleString() }}</td>
             <td class="actions">
               <button

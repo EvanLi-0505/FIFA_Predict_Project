@@ -1,5 +1,6 @@
-"""Regression test for a real bug found during Stage 5 desktop QA: the
-built-in dataset's `file_path` (and the initial model's `artifact_path`)
+"""Bootstrap behaviour: built-in model registration/activation rules, plus
+a regression test for a real bug found during Stage 5 desktop QA: the
+built-in dataset's `file_path` (and the built-in models' `artifact_path`)
 were only ever written on the very first bootstrap call. If that first
 value was ever wrong for any reason — or the app is later reinstalled to a
 different location — every dataset-dependent endpoint breaks permanently
@@ -78,7 +79,7 @@ def test_builtin_dataset_path_resyncs_on_every_startup(session, tmp_path):
     assert refreshed.validation_status == "valid"
 
 
-def test_initial_model_artifact_path_resyncs_on_every_startup(session, tmp_path):
+def test_builtin_model_artifact_path_resyncs_on_every_startup(session, tmp_path):
     session, engine = session
     model_repo = ModelVersionRepositoryImpl()
 
@@ -91,7 +92,7 @@ def test_initial_model_artifact_path_resyncs_on_every_startup(session, tmp_path)
         engine,
         session,
         builtin_dataset_csv=csv_path,
-        initial_model_dir=original_model_dir,
+        builtin_model_dirs=[original_model_dir],
     )
     model = model_repo.get_by_model_id(session, "decision_tree_v1")
     assert model.artifact_path == str(original_model_dir)
@@ -103,7 +104,7 @@ def test_initial_model_artifact_path_resyncs_on_every_startup(session, tmp_path)
         engine,
         session,
         builtin_dataset_csv=csv_path,
-        initial_model_dir=moved_model_dir,
+        builtin_model_dirs=[moved_model_dir],
     )
 
     refreshed = model_repo.get_by_model_id(session, "decision_tree_v1")
@@ -111,10 +112,88 @@ def test_initial_model_artifact_path_resyncs_on_every_startup(session, tmp_path)
     assert refreshed.artifact_path == str(moved_model_dir)
 
 
-def _save_dummy_model(model_dir: Path) -> None:
+def _two_builtin_models(tmp_path: Path) -> tuple[Path, Path]:
+    original = tmp_path / "models" / "decision_tree" / "v1"
+    elo = tmp_path / "models" / "logistic_regression" / "elo_v1"
+    _save_dummy_model(original)
+    _save_dummy_model(elo, model_id="logistic_regression_elo_v1")
+    return original, elo
+
+
+def _active_model_id(session) -> str:
+    return ModelVersionRepositoryImpl().get_active(session).model_id
+
+
+def test_fresh_install_registers_all_builtins_and_activates_default(session, tmp_path):
+    session, engine = session
+    csv_path = _write_csv(tmp_path / "results.csv")
+    original, elo = _two_builtin_models(tmp_path)
+
+    bootstrap_database(
+        engine, session, builtin_dataset_csv=csv_path,
+        builtin_model_dirs=[original, elo], default_model_dir=elo,
+    )
+
+    models = ModelVersionRepositoryImpl().list_all(session)
+    assert {m.model_id for m in models} == {"decision_tree_v1", "logistic_regression_elo_v1"}
+    assert all(m.is_builtin for m in models)
+    assert _active_model_id(session) == "logistic_regression_elo_v1"
+
+
+def test_upgrade_switches_from_old_builtin_to_new_default_once(session, tmp_path):
+    session, engine = session
+    csv_path = _write_csv(tmp_path / "results.csv")
+    original, elo = _two_builtin_models(tmp_path)
+
+    # A v2.0 database: only the original built-in model, active.
+    bootstrap_database(engine, session, builtin_dataset_csv=csv_path, builtin_model_dirs=[original])
+    assert _active_model_id(session) == "decision_tree_v1"
+
+    bootstrap_database(
+        engine, session, builtin_dataset_csv=csv_path,
+        builtin_model_dirs=[original, elo], default_model_dir=elo,
+    )
+    assert _active_model_id(session) == "logistic_regression_elo_v1"
+
+    # The user deliberately switches back; later startups must respect that.
+    model_repo = ModelVersionRepositoryImpl()
+    model_repo.activate(session, model_repo.get_by_model_id(session, "decision_tree_v1").id)
+    session.commit()
+    bootstrap_database(
+        engine, session, builtin_dataset_csv=csv_path,
+        builtin_model_dirs=[original, elo], default_model_dir=elo,
+    )
+    assert _active_model_id(session) == "decision_tree_v1"
+
+
+def test_upgrade_keeps_a_user_trained_active_model(session, tmp_path):
+    session, engine = session
+    csv_path = _write_csv(tmp_path / "results.csv")
+    original, elo = _two_builtin_models(tmp_path)
+
+    bootstrap_database(engine, session, builtin_dataset_csv=csv_path, builtin_model_dirs=[original])
+    model_repo = ModelVersionRepositoryImpl()
+    builtin_dataset = DatasetRepositoryImpl().get_by_version_label(session, "builtin_v1")
+    user_model = model_repo.create(
+        session, model_id="logistic_regression_v1", model_type="logistic_regression",
+        dataset_id=builtin_dataset.id, feature_version="feature_v1",
+        artifact_path=str(tmp_path / "user_model"),
+    )
+    model_repo.activate(session, user_model.id)
+    session.commit()
+
+    bootstrap_database(
+        engine, session, builtin_dataset_csv=csv_path,
+        builtin_model_dirs=[original, elo], default_model_dir=elo,
+    )
+    assert _active_model_id(session) == "logistic_regression_v1"
+    assert model_repo.get_by_model_id(session, "logistic_regression_elo_v1").is_builtin
+
+
+def _save_dummy_model(model_dir: Path, model_id: str = "decision_tree_v1") -> None:
     model = make_decision_tree()
     metadata = ModelMetadata(
-        model_id="decision_tree_v1",
+        model_id=model_id,
         model_type="decision_tree",
         dataset_version="builtin_v1",
         feature_version="feature_v1",

@@ -19,7 +19,17 @@ from sqlalchemy.orm import Session
 
 from backend.app.config import settings
 from backend.app.services import feature_service
-from core.config import CLASS_LABELS, FEATURE_VERSION, TRAIN_RATIO
+from core.analytics.upset import (
+    UPSET_HISTORY_CACHE_FILENAME,
+    compute_upset_history,
+    save_upset_history_cache,
+)
+from core.config import (
+    CLASS_LABELS,
+    DEFAULT_FEATURE_VERSION,
+    SUPPORTED_FEATURE_VERSIONS,
+    TRAIN_RATIO,
+)
 from core.dataset.io import load_raw_dataset
 from core.models.definitions import MODEL_FACTORIES
 from core.models.registry import ModelMetadata, save_model_artifact
@@ -56,12 +66,21 @@ def get_model(session: Session, model_version_id: int) -> ModelVersion | None:
 
 
 def train_model(
-    session: Session, *, dataset_id: int, model_type: str = "decision_tree"
+    session: Session,
+    *,
+    dataset_id: int,
+    model_type: str = "logistic_regression",
+    feature_version: str = DEFAULT_FEATURE_VERSION,
 ) -> ModelVersion:
     if model_type not in MODEL_FACTORIES:
         raise ModelTrainingError(
             f"Unknown model_type {model_type!r}. Expected one of "
             f"{sorted(MODEL_FACTORIES)}."
+        )
+    if feature_version not in SUPPORTED_FEATURE_VERSIONS:
+        raise ModelTrainingError(
+            f"Unknown feature_version {feature_version!r}. Expected one of "
+            f"{list(SUPPORTED_FEATURE_VERSIONS)}."
         )
 
     dataset = _dataset_repo.get_by_id(session, dataset_id)
@@ -74,7 +93,7 @@ def train_model(
         )
 
     df_raw = load_raw_dataset(dataset.file_path)
-    pipeline_result = run_feature_pipeline(df_raw)
+    pipeline_result = run_feature_pipeline(df_raw, feature_version)
 
     model_factory = MODEL_FACTORIES[model_type]
 
@@ -131,7 +150,7 @@ def train_model(
             model_id=model_id,
             model_type=model_type,
             dataset_version=dataset.version_label,
-            feature_version=FEATURE_VERSION,
+            feature_version=feature_version,
             feature_columns=pipeline_result.feature_columns,
             tournament_dummy_columns=pipeline_result.tournament_dummy_columns,
             cold_start_fill_values=pipeline_result.cold_start_fill_values,
@@ -157,7 +176,15 @@ def train_model(
         # point instead of never.
         save_team_state_index_cache(
             artifact_dir / TEAM_STATE_CACHE_FILENAME,
-            build_team_latest_state_index(pipeline_result.featured_data),
+            build_team_latest_state_index(
+                pipeline_result.featured_data, pipeline_result.elo_ratings
+            ),
+        )
+        save_upset_history_cache(
+            artifact_dir / UPSET_HISTORY_CACHE_FILENAME,
+            compute_upset_history(
+                model, scaler, pipeline_result.model_data, pipeline_result.feature_columns
+            ),
         )
 
         try:
@@ -166,7 +193,7 @@ def train_model(
                 model_id=model_id,
                 model_type=model_type,
                 dataset_id=dataset.id,
-                feature_version=FEATURE_VERSION,
+                feature_version=feature_version,
                 artifact_path=str(artifact_dir.resolve()),
                 metrics=metadata.metrics,
             )

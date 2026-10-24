@@ -5,6 +5,8 @@ import { useModelStore } from '../stores/modelStore'
 import { useDatasetStore } from '../stores/datasetStore'
 import { downloadPredictionReportMarkdown, downloadPredictionReportPdf } from '../utils/report'
 import { fetchTeamComparisonData } from '../utils/matchComparison'
+import { fetchUpsetHistory, upsetSummary } from '../utils/upset'
+import UpsetRiskBadge from '../components/UpsetRiskBadge.vue'
 
 const predictionStore = usePredictionStore()
 const modelStore = useModelStore()
@@ -60,6 +62,12 @@ async function download(item, format) {
   } catch {
     comparison = undefined
   }
+  let upsetHistory
+  try {
+    upsetHistory = await fetchUpsetHistory(item.home_team, item.away_team)
+  } catch {
+    upsetHistory = undefined
+  }
 
   const payload = {
     homeTeam: item.home_team,
@@ -74,6 +82,7 @@ async function download(item, format) {
     datasetVersion: datasetLabel(item.dataset_id),
     timestamp: item.created_at,
     comparison,
+    upset: { ...upsetSummary(item), history: upsetHistory },
   }
 
   try {
@@ -110,12 +119,14 @@ async function download(item, format) {
       <p v-else-if="predictionStore.history.length === 0" class="muted">
         No predictions yet — make one on the Predict page.
       </p>
-      <table v-else>
+      <div v-else class="table-scroll">
+      <table>
         <thead>
           <tr>
             <th>Match</th>
             <th>Outcome</th>
             <th>Confidence</th>
+            <th>Upset risk</th>
             <th>Model</th>
             <th>Dataset</th>
             <th>When</th>
@@ -127,7 +138,9 @@ async function download(item, format) {
             <td>{{ item.home_team }} vs {{ item.away_team }}</td>
             <td><span class="badge" :class="outcomeBadgeClass(item.predicted_outcome)">{{ item.predicted_outcome }}</span></td>
             <td>{{ (item.confidence * 100).toFixed(1) }}%</td>
-            <td>{{ modelLabel(item.model_version_id) }}</td>
+            <td><UpsetRiskBadge :probability="item.upset_probability" :level="item.upset_risk_level" compact /></td>
+            <!-- zero-width spaces: long ids like logistic_regression_elo_v1 wrap at underscores -->
+            <td>{{ modelLabel(item.model_version_id).replaceAll('_', '_​') }}</td>
             <td>{{ datasetLabel(item.dataset_id) }}</td>
             <td class="muted">{{ new Date(item.created_at).toLocaleString() }}</td>
             <td class="actions">
@@ -150,13 +163,19 @@ async function download(item, format) {
           </tr>
         </tbody>
       </table>
+      </div>
     </div>
   </div>
 </template>
 
 <style scoped>
+.table-scroll {
+  overflow-x: auto;
+}
+
 .actions {
   display: flex;
+  flex-wrap: wrap;
   gap: 8px;
   white-space: nowrap;
 }

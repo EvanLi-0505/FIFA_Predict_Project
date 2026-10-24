@@ -18,6 +18,7 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
+from backend.app.config import BUILTIN_MODEL_SUBDIRS, DEFAULT_BUILTIN_MODEL_SUBDIR  # noqa: E402
 from database.bootstrap import bootstrap_database  # noqa: E402
 from database.engine import create_db_engine, create_session_factory  # noqa: E402
 from database.repositories.sqlalchemy_repositories import (  # noqa: E402
@@ -27,7 +28,7 @@ from database.repositories.sqlalchemy_repositories import (  # noqa: E402
 
 DEV_DB_PATH = PROJECT_ROOT / "dev-data" / "app.db"
 BUILTIN_DATASET_CSV = PROJECT_ROOT / "datasets" / "builtin" / "results.csv"
-MODEL_ARTIFACT_DIR = PROJECT_ROOT / "models" / "decision_tree" / "v1"
+MODELS_ROOT = PROJECT_ROOT / "models"
 
 
 def main() -> int:
@@ -44,7 +45,8 @@ def main() -> int:
             engine,
             session,
             builtin_dataset_csv=BUILTIN_DATASET_CSV,
-            initial_model_dir=MODEL_ARTIFACT_DIR,
+            builtin_model_dirs=[MODELS_ROOT / subdir for subdir in BUILTIN_MODEL_SUBDIRS],
+            default_model_dir=MODELS_ROOT / DEFAULT_BUILTIN_MODEL_SUBDIR,
         )
 
         dataset_repo = DatasetRepositoryImpl()
@@ -63,7 +65,7 @@ def main() -> int:
         print("\nModel versions:")
         for model_version in model_repo.list_all(session):
             print(
-                f"  {model_version.model_id:<20} type={model_version.model_type:<16} "
+                f"  {model_version.model_id:<28} type={model_version.model_type:<20} "
                 f"active={model_version.is_active} dataset_id={model_version.dataset_id}"
             )
 

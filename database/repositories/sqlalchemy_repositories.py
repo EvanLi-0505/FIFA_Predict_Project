@@ -209,7 +209,7 @@ class ModelVersionRepositoryImpl(ModelVersionRepository):
             return
         if target.is_builtin:
             raise PermissionError(
-                "This is the protected built-in production model and cannot be deleted."
+                "This is a protected built-in model and cannot be deleted."
             )
         if target.is_active:
             raise ValueError(

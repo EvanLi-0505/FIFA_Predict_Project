@@ -17,6 +17,7 @@ dist/
 # output elsewhere should not be.
 /models/**/model.joblib
 !/models/decision_tree/v1/model.joblib
+!/models/logistic_regression/elo_v1/model.joblib
 
 # User-uploaded datasets / generated SQLite DB (desktop dev runs)
 /datasets/user/

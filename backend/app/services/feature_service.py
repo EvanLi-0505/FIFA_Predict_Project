@@ -38,11 +38,13 @@ from sklearn.preprocessing import StandardScaler
 from sqlalchemy.orm import Session
 
 from core.dataset.io import load_raw_dataset
+from core.feature_engineering.elo import ELO_FEATURES
 from core.models.registry import load_model_artifact
 from core.pipeline import run_feature_pipeline
 from core.prediction.team_state import (
     TeamState,
     build_team_latest_state_index,
+    has_elo_ratings,
     list_known_teams,
     load_team_state_index_cache,
     save_team_state_index_cache,
@@ -120,15 +122,18 @@ def get_inference_context(session: Session, *, force_reload: bool = False) -> In
         # next to that model's own artifact — reused on every later launch
         # instead of recomputed, until a genuinely different model becomes
         # active (a different artifact_path -> a different cache file).
+        loaded_model = load_model_artifact(active_model.artifact_path)
+        needs_elo = any(c in loaded_model.metadata.feature_columns for c in ELO_FEATURES)
+
         cache_path = Path(active_model.artifact_path) / TEAM_STATE_CACHE_FILENAME
         team_state_index = load_team_state_index_cache(cache_path)
-        if team_state_index is None:
+        if team_state_index is None or (needs_elo and not has_elo_ratings(team_state_index)):
             df_raw = load_raw_dataset(training_dataset.file_path)
             pipeline_result = run_feature_pipeline(df_raw)
-            team_state_index = build_team_latest_state_index(pipeline_result.featured_data)
+            team_state_index = build_team_latest_state_index(
+                pipeline_result.featured_data, pipeline_result.elo_ratings
+            )
             save_team_state_index_cache(cache_path, team_state_index)
-
-        loaded_model = load_model_artifact(active_model.artifact_path)
 
         context = InferenceContext(
             dataset_id=training_dataset.id,

@@ -166,7 +166,7 @@ def configure_environment(data_dir: Path, resources: Path) -> None:
     os.environ.setdefault("USER_DATASETS_DIR", str(data_dir / "datasets" / "user"))
     os.environ.setdefault("MODELS_DIR", str(data_dir / "models"))
     os.environ.setdefault("BUILTIN_DATASET_CSV", str(resources / "datasets" / "builtin" / "results.csv"))
-    os.environ.setdefault("INITIAL_MODEL_DIR", str(resources / "models" / "decision_tree" / "v1"))
+    os.environ.setdefault("BUILTIN_MODELS_DIR", str(resources / "models"))
     # Same-origin (pywebview loads http://127.0.0.1:PORT/, same as the API)
     # — CORS is irrelevant here, but the FastAPI app always applies its
     # CORSMiddleware, so this just needs to name our own origin.

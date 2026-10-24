@@ -24,6 +24,7 @@ from sklearn.base import ClassifierMixin
 from sklearn.preprocessing import StandardScaler
 
 from core.feature_engineering.differences import add_difference_features
+from core.feature_engineering.elo import ELO_INITIAL_RATING, add_elo_difference
 from core.feature_engineering.tournament import categorize_tournament
 from core.models.training import predict_with_model
 from core.prediction.team_state import TeamState
@@ -58,6 +59,7 @@ def _resolve_team_state(
         "goals_conceded": cold_start_fill_values["home_avg_goals_conceded"],
         "goal_diff": cold_start_fill_values["home_recent_goal_difference"],
         "exp": 0,
+        "elo": ELO_INITIAL_RATING,
     }
 
 
@@ -96,12 +98,18 @@ def build_dynamic_feature_row(
                 "away_recent_goal_difference": away_state["goal_diff"],
                 "home_matches_available": home_state["exp"],
                 "away_matches_available": away_state["exp"],
+                # Absent from feature_v1-era state caches; only feature_v2
+                # selects these columns, and feature_service guarantees its
+                # cache has them (see has_elo_ratings).
+                "elo_home": home_state.get("elo", ELO_INITIAL_RATING),
+                "elo_away": away_state.get("elo", ELO_INITIAL_RATING),
                 "neutral": neutral,
             }
         ]
     )
 
     dynamic_row = add_difference_features(dynamic_row)
+    dynamic_row = add_elo_difference(dynamic_row)
 
     tournament_category = categorize_tournament(tournament)
     for column in tournament_dummy_columns:

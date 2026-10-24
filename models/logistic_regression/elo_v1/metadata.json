@@ -1,0 +1,75 @@
+{
+  "model_id": "logistic_regression_elo_v1",
+  "model_type": "logistic_regression",
+  "dataset_version": "builtin_v1",
+  "feature_version": "feature_v2",
+  "feature_columns": [
+    "home_recent_win_rate",
+    "away_recent_win_rate",
+    "home_recent_draw_rate",
+    "away_recent_draw_rate",
+    "home_avg_goals_scored",
+    "away_avg_goals_scored",
+    "home_avg_goals_conceded",
+    "away_avg_goals_conceded",
+    "home_recent_goal_difference",
+    "away_recent_goal_difference",
+    "home_matches_available",
+    "away_matches_available",
+    "win_rate_difference",
+    "draw_rate_difference",
+    "goals_scored_difference",
+    "goals_conceded_difference",
+    "goal_difference_difference",
+    "experience_difference",
+    "elo_home",
+    "elo_away",
+    "elo_diff",
+    "neutral",
+    "tournament_Friendly",
+    "tournament_Other Competitive",
+    "tournament_World Cup",
+    "tournament_World Cup Qualification"
+  ],
+  "tournament_dummy_columns": [
+    "tournament_Friendly",
+    "tournament_Other Competitive",
+    "tournament_World Cup",
+    "tournament_World Cup Qualification"
+  ],
+  "cold_start_fill_values": {
+    "home_recent_win_rate": 0.3863287560581583,
+    "away_recent_win_rate": 0.3863287560581583,
+    "home_recent_draw_rate": 0.22734248788368336,
+    "away_recent_draw_rate": 0.22734248788368336,
+    "home_avg_goals_scored": 1.4698101777059773,
+    "away_avg_goals_scored": 1.4698101777059773,
+    "home_avg_goals_conceded": 1.4698101777059773,
+    "away_avg_goals_conceded": 1.4698101777059773,
+    "home_recent_goal_difference": 0.0,
+    "away_recent_goal_difference": 0.0
+  },
+  "class_labels": [
+    "Draw",
+    "Home Loss",
+    "Home Win"
+  ],
+  "training_timestamp": "2026-10-23T18:44:13.607018+00:00",
+  "metrics": {
+    "held_out_split_date": "2016-03-29",
+    "overall_test": {
+      "accuracy": 0.598992950654582,
+      "macro_precision": 0.5108250856630313,
+      "macro_recall": 0.49870817605370216,
+      "macro_f1": 0.44238734217165065
+    },
+    "world_cup_test": {
+      "accuracy": 0.5905172413793104,
+      "macro_precision": 0.39372895622895626,
+      "macro_recall": 0.5,
+      "macro_f1": 0.4391876448884971
+    },
+    "trained_on_records": 49520
+  },
+  "has_scaler": true
+}

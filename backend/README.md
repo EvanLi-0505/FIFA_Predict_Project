@@ -17,8 +17,8 @@ python -m venv .venv          # from the project root, if not already created
 
 No configuration needed — defaults to a local SQLite file at
 `backend/dev-data/app.db`, auto-created and auto-bootstrapped (built-in
-dataset + trained Decision Tree model registered as active) on first
-startup.
+dataset + both built-in models registered, the Elo logistic regression
+active) on first startup.
 
 ```bash
 .venv/Scripts/python.exe -m uvicorn backend.app.main:app --reload --port 8000
@@ -53,7 +53,7 @@ via your process manager/deployment platform in production.
 | `BUILTIN_DATASET_CSV` | `datasets/builtin/results.csv` | Protected built-in dataset |
 | `USER_DATASETS_DIR` | `datasets/user/` | Where uploaded CSVs are stored |
 | `MODELS_DIR` | `models/` | Where newly trained model artifacts are stored |
-| `INITIAL_MODEL_DIR` | `models/decision_tree/v1` | Model registered as active on first bootstrap |
+| `BUILTIN_MODELS_DIR` | `models/` | Root of the shipped built-in models (`decision_tree/v1`, `logistic_regression/elo_v1` — the latter active on a fresh database) |
 | `CORS_ALLOW_ORIGINS` | `http://localhost:5173` | Comma-separated allowed origins (Vite dev server) |
 | `MAX_UPLOAD_SIZE_BYTES` | `52428800` (50 MB) | Dataset upload size limit |
 
@@ -63,14 +63,16 @@ via your process manager/deployment platform in production.
 |---|---|---|
 | GET | `/api/health` | Liveness check |
 | GET | `/api/teams` | Known team names (for dropdowns) |
-| POST | `/api/predictions` | Predict a hypothetical match |
+| POST | `/api/predictions` | Predict a hypothetical match (response includes `upset_probability` / `upset_risk_level`) |
+| POST | `/api/upsets/risk` | Upset risk for a hypothetical match — same body as `/api/predictions`, not recorded in history |
+| GET | `/api/upsets/teams/{team}` | A team's historical upsets (underdog won with < 20% pre-match chance), most recent first, plus caused/suffered counts |
 | GET | `/api/history` | Recent prediction history |
 | GET | `/api/datasets` | List dataset versions |
 | POST | `/api/datasets/upload` | Upload a new dataset version (multipart `file`) |
 | POST | `/api/datasets/{id}/activate` | Mark a dataset as current (does not affect live predictions by itself) |
 | DELETE | `/api/datasets/{id}` | Delete an uploaded dataset (built-in is protected: 403) |
 | GET | `/api/models` | List trained model versions |
-| POST | `/api/models/train` | Train a new model on a given dataset (`decision_tree` default) |
+| POST | `/api/models/train` | Train a new model on a given dataset (defaults: `model_type="logistic_regression"`, `feature_version="feature_v2"`) |
 | POST | `/api/models/{id}/activate` | Activate a model version — this IS what changes live predictions |
 
 **Important**: predictions always use the **active model's own training

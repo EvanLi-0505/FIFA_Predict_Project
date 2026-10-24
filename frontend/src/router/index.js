@@ -7,6 +7,7 @@ import ModelView from '../views/ModelView.vue'
 import HistoryView from '../views/HistoryView.vue'
 import DashboardView from '../views/DashboardView.vue'
 import TeamExplorerView from '../views/TeamExplorerView.vue'
+import UpsetRiskView from '../views/UpsetRiskView.vue'
 import SettingsView from '../views/SettingsView.vue'
 
 // Both the Web edition and the Desktop edition (pywebview pointed at
@@ -21,6 +22,7 @@ const router = createRouter({
   routes: [
     { path: '/', name: 'home', component: HomeView },
     { path: '/predict', name: 'predict', component: PredictionView },
+    { path: '/upsets', name: 'upsets', component: UpsetRiskView },
     { path: '/datasets', name: 'datasets', component: DatasetView },
     { path: '/models', name: 'models', component: ModelView },
     { path: '/history', name: 'history', component: HistoryView },

@@ -23,6 +23,7 @@ function acceptDisclaimer() {
         <nav>
           <RouterLink to="/">Home</RouterLink>
           <RouterLink to="/predict">Predict</RouterLink>
+          <RouterLink to="/upsets">Upset Risk</RouterLink>
           <RouterLink to="/datasets">Datasets</RouterLink>
           <RouterLink to="/models">Models</RouterLink>
           <RouterLink to="/history">History</RouterLink>

@@ -11,7 +11,9 @@ from __future__ import annotations
 from sklearn.ensemble import (
     AdaBoostClassifier,
     GradientBoostingClassifier,
+    HistGradientBoostingClassifier,
     RandomForestClassifier,
+    VotingClassifier,
 )
 from sklearn.linear_model import LogisticRegression
 from sklearn.naive_bayes import GaussianNB
@@ -98,6 +100,29 @@ def make_adaboost() -> AdaBoostClassifier:
     return AdaBoostClassifier(n_estimators=100, random_state=RANDOM_STATE)
 
 
+def make_soft_voting() -> VotingClassifier:
+    """Added in v2.1.0 — averages the predicted probabilities of Logistic
+    Regression, Gradient Boosting and Histogram Gradient Boosting. Trained on
+    scaled input (the logistic member needs it; the tree members are
+    unaffected). No Random Forest member: it made the saved model ~125 MB
+    for no accuracy gain in rolling-window validation.
+    """
+
+    return VotingClassifier(
+        estimators=[
+            ("logistic_regression", make_logistic_regression()),
+            ("gradient_boosting", make_gradient_boosting()),
+            (
+                "hist_gradient_boosting",
+                HistGradientBoostingClassifier(
+                    max_iter=200, learning_rate=0.05, random_state=RANDOM_STATE
+                ),
+            ),
+        ],
+        voting="soft",
+    )
+
+
 MODEL_FACTORIES = {
     "logistic_regression": make_logistic_regression,
     "decision_tree": make_decision_tree,
@@ -106,7 +131,8 @@ MODEL_FACTORIES = {
     "knn": make_knn,
     "naive_bayes": make_naive_bayes,
     "adaboost": make_adaboost,
+    "soft_voting": make_soft_voting,
 }
 
 # Model types that require StandardScaler-transformed input (fit on train only)
-MODELS_REQUIRING_SCALING = {"logistic_regression", "knn"}
+MODELS_REQUIRING_SCALING = {"logistic_regression", "knn", "soft_voting"}
